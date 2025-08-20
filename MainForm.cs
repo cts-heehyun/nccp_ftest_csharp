@@ -16,7 +16,19 @@ public partial class MainForm : Form
     private readonly ConcurrentDictionary<string, ListViewItem> macListViewItems = new();
     private readonly ConcurrentDictionary<string, bool> respondedMacsInCycle = new();
     private readonly ConcurrentDictionary<int, DateTime> sentMessageTimestamps = new(); // Changed name and key type
-    private readonly ConcurrentDictionary<string, int> macMismatchCounts = new(); // New dictionary
+    private readonly ConcurrentDictionary<string, int> macMismatchCounts = new();
+
+    // 매직넘버/문자열 상수화
+    private const string ErrorCountDefault = "0";
+    private const string ResponseTimeDefault = "N/A";
+    private const string TimeoutText = "Timeout";
+
+    // UI 스레드 안전 호출 유틸
+    private void InvokeIfRequired(Control control, Action action)
+    {
+        if (control.InvokeRequired) control.Invoke(action);
+        else action();
+    }
 
     public MainForm()
     {
@@ -42,7 +54,7 @@ public partial class MainForm : Form
         {
             try
             {
-                IPAddress selectedIp = cmbBindIp.SelectedIndex == 0 ? IPAddress.Any : IPAddress.Parse((string)cmbBindIp.SelectedItem);
+                IPAddress selectedIp = cmbBindIp.SelectedIndex == 0 ? IPAddress.Any : IPAddress.Parse((string?)cmbBindIp.SelectedItem ?? "127.0.0.1");
                 udpClient = new UdpClient(new IPEndPoint(selectedIp, 0));
                 listenerCts = new CancellationTokenSource();
                 AppendLog($"Bound to {udpClient.Client.LocalEndPoint}");
@@ -112,7 +124,7 @@ public partial class MainForm : Form
                 else { AppendLog($"Received from {receivedResult.RemoteEndPoint}: {rawMessage}"); }
             }
             catch (OperationCanceledException) { break; }
-            catch (Exception) { /* 무시 */ }
+            catch (Exception ex) { AppendLog($"Listen error: {ex.Message}"); }
         }
     }
 
@@ -124,20 +136,21 @@ public partial class MainForm : Form
             // IP 주소가 변경된 경우만 UI 갱신
             if (existingItem.SubItems[1].Text != ipAddress)
             {
-                Invoke(() => existingItem.SubItems[1].Text = ipAddress);
+                if (existingItem.ListView != null)
+                    InvokeIfRequired(existingItem.ListView, () => existingItem.SubItems[1].Text = ipAddress);
             }
             return;
         }
 
         // 새 MAC이면 리스트뷰에 추가
-        Invoke(() =>
+        InvokeIfRequired(lvMacStatus, () =>
         {
             if (macListViewItems.ContainsKey(mac)) return;
             var item = new ListViewItem(mac) { Checked = true };
             item.SubItems.Add(ipAddress);
-            item.SubItems.Add("0"); // Error Count
-            item.SubItems.Add("N/A"); // Response Time
-            item.SubItems.Add("0"); // Mismatch Count
+            item.SubItems.Add(ErrorCountDefault); // Error Count
+            item.SubItems.Add(ResponseTimeDefault); // Response Time
+            item.SubItems.Add(ErrorCountDefault); // Mismatch Count
             lvMacStatus.Items.Add(item);
             macListViewItems.TryAdd(mac, item);
             AppendLog($"New device discovered: {mac} at {ipAddress}");
@@ -147,21 +160,17 @@ public partial class MainForm : Form
 
     private void UpdateDeviceCount()
     {
-        if (lblDeviceCount.InvokeRequired)
-        {
-            lblDeviceCount.Invoke(new Action(UpdateDeviceCount));
-        }
-        else
+        InvokeIfRequired(lblDeviceCount, () =>
         {
             lblDeviceCount.Text = $"Discovered: {macListViewItems.Count}";
-        }
+        });
     }
 
     private void UpdateMismatchCount(string mac)
     {
         if (macListViewItems.TryGetValue(mac, out var item))
         {
-            Invoke(() =>
+            InvokeIfRequired(item.ListView!, () =>
             {
                 if (item.SubItems.Count > 4)
                 {
@@ -176,7 +185,8 @@ public partial class MainForm : Form
     {
         if (macListViewItems.TryGetValue(mac, out var item))
         {
-            Invoke(() => item.SubItems[3].Text = rtt.ToString("F1"));
+            if (item.ListView != null)
+                InvokeIfRequired(item.ListView, () => item.SubItems[3].Text = rtt.ToString("F1"));
         }
     }
 
@@ -219,15 +229,15 @@ public partial class MainForm : Form
         var dummySize = (int)numDummySize.Value;
 
         // Reset error counters in ListView
-        Invoke(() =>
+        InvokeIfRequired(lvMacStatus, () =>
         {
             foreach (ListViewItem item in lvMacStatus.Items)
             {
-                item.SubItems[2].Text = "0"; // Error Count
-                item.SubItems[4].Text = "0"; // Mismatch Count
+                item.SubItems[2].Text = ErrorCountDefault; // Error Count
+                item.SubItems[4].Text = ErrorCountDefault; // Mismatch Count
             }
         });
-        macMismatchCounts.Clear(); // Clear the dictionary as well
+        macMismatchCounts.Clear();
 
         Task.Run(async () =>
         {
@@ -242,8 +252,8 @@ public partial class MainForm : Form
                     var message = $"<FTEST,{messageCounter},{dummyData}>";
                     byte[] bytesToSend = Encoding.UTF8.GetBytes(message);
                     
-                    lastGlobalSentMessageCounter = messageCounter; // Store last sent global message counter
-                    sentMessageTimestamps[messageCounter] = DateTime.UtcNow; // Store timestamp for RTT
+                    lastGlobalSentMessageCounter = messageCounter;
+                    sentMessageTimestamps[messageCounter] = DateTime.UtcNow;
 
                     await udpClient!.SendAsync(bytesToSend, targetEndPoint!);
                     AppendLog($"Sent: <FTEST,{messageCounter},...>");
@@ -252,7 +262,7 @@ public partial class MainForm : Form
                 }
             }
             catch (OperationCanceledException) { /* 정상 */ }
-            catch (Exception ex) { Invoke(() => MessageBox.Show($"Periodic send error: {ex.Message}", "Error")); }
+            catch (Exception ex) { AppendLog($"Periodic send error: {ex.Message}"); }
         });
         btnSend.Text = "Stop";
         SetPeriodicSendUIState(isSending: true);
@@ -262,18 +272,19 @@ public partial class MainForm : Form
     private void CheckForMissedResponses()
     {
         List<ListViewItem> checkedItems = new List<ListViewItem>();
-        Invoke(() => checkedItems = lvMacStatus.CheckedItems.Cast<ListViewItem>().ToList());
+        InvokeIfRequired(lvMacStatus, () => checkedItems = lvMacStatus.CheckedItems.Cast<ListViewItem>().ToList());
         foreach (var item in checkedItems)
         {
             string mac = item.Text;
             if (!respondedMacsInCycle.ContainsKey(mac))
             {
-                Invoke(() =>
-                {
-                    int currentErrors = int.Parse(item.SubItems[2].Text);
-                    item.SubItems[2].Text = (currentErrors + 1).ToString();
-                    item.SubItems[3].Text = "Timeout"; // 응답 시간 타임아웃 처리
-                });
+                if (item.ListView != null)
+                    InvokeIfRequired(item.ListView, () =>
+                    {
+                        int currentErrors = int.Parse(item.SubItems[2].Text);
+                        item.SubItems[2].Text = (currentErrors + 1).ToString();
+                        item.SubItems[3].Text = TimeoutText;
+                    });
             }
         }
         respondedMacsInCycle.Clear();
@@ -304,7 +315,7 @@ public partial class MainForm : Form
     {
         targetEndPoint = null;
         if (udpClient == null) return false;
-        IPAddress targetIp;
+        IPAddress? targetIp;
         if (chkEnableBroadcast.Checked)
         {
             targetIp = IPAddress.Broadcast;
@@ -312,7 +323,7 @@ public partial class MainForm : Form
         }
         else
         {
-            if (!IPAddress.TryParse(txtIpAddress.Text, out targetIp)) { MessageBox.Show("Invalid IP.", "Warning"); return false; }
+            if (!IPAddress.TryParse(txtIpAddress.Text ?? string.Empty, out targetIp) || targetIp == null) { MessageBox.Show("Invalid IP.", "Warning"); return false; }
             udpClient.EnableBroadcast = false;
         }
         if (!int.TryParse(txtPort.Text, out int targetPort) || targetPort < 1 || targetPort > 65535) { MessageBox.Show("Invalid Port.", "Warning"); return false; }
@@ -346,8 +357,10 @@ public partial class MainForm : Form
 
     private void AppendLog(string message)
     {
-        if (txtLog.InvokeRequired) { Invoke(() => AppendLog(message)); return; }
-        txtLog.AppendText($"[{DateTime.Now:HH:mm:ss}] {message}{Environment.NewLine}");
+        InvokeIfRequired(txtLog, () =>
+        {
+            txtLog.AppendText($"[{DateTime.Now:HH:mm:ss}] {message}{Environment.NewLine}");
+        });
     }
 
     private void MainForm_FormClosing(object sender, FormClosingEventArgs e)

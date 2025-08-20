@@ -14,11 +14,11 @@
   "project": {
     "version": "1.0.0",
     "restore": {
-      "projectUniqueName": "D:\\01_CodeSource\\99_test\\c_sharp\\udp_unicast\\UdpUnicast.csproj",
+      "projectUniqueName": "D:\\01_CodeSource\\99_test\\c_sharp\\nccp_ftest_csharp\\UdpUnicast.csproj",
       "projectName": "UdpUnicast",
-      "projectPath": "D:\\01_CodeSource\\99_test\\c_sharp\\udp_unicast\\UdpUnicast.csproj",
+      "projectPath": "D:\\01_CodeSource\\99_test\\c_sharp\\nccp_ftest_csharp\\UdpUnicast.csproj",
       "packagesPath": "C:\\Users\\SeoHH\\.nuget\\packages\\",
-      "outputPath": "D:\\01_CodeSource\\99_test\\c_sharp\\udp_unicast\\obj\\",
+      "outputPath": "D:\\01_CodeSource\\99_test\\c_sharp\\nccp_ftest_csharp\\obj\\",
       "projectStyle": "PackageReference",
       "fallbackFolders": [
         "C:\\Program Files (x86)\\Microsoft Visual Studio\\Shared\\NuGetPackages"
