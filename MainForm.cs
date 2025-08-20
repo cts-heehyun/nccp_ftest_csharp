@@ -66,6 +66,7 @@ public partial class MainForm : Form
         }
     }
 
+    // 비동기로 메시지 수신 및 처리
     private async Task ListenForMessages(CancellationToken token)
     {
         while (!token.IsCancellationRequested)
@@ -115,11 +116,12 @@ public partial class MainForm : Form
         }
     }
 
+    // MAC 주소와 IP를 리스트뷰에 추가하거나, 이미 있으면 IP만 갱신
     private void AddOrUpdateMac(string mac, string ipAddress)
     {
         if (macListViewItems.TryGetValue(mac, out var existingItem))
         {
-            // IP 주소가 변경되었는지 확인하고 필요한 경우 업데이트합니다.
+            // IP 주소가 변경된 경우만 UI 갱신
             if (existingItem.SubItems[1].Text != ipAddress)
             {
                 Invoke(() => existingItem.SubItems[1].Text = ipAddress);
@@ -127,6 +129,7 @@ public partial class MainForm : Form
             return;
         }
 
+        // 새 MAC이면 리스트뷰에 추가
         Invoke(() =>
         {
             if (macListViewItems.ContainsKey(mac)) return;
@@ -255,6 +258,7 @@ public partial class MainForm : Form
         SetPeriodicSendUIState(isSending: true);
     }
 
+    // 체크된 MAC 중 응답이 없는 경우 에러 카운트 증가 및 타임아웃 표시
     private void CheckForMissedResponses()
     {
         List<ListViewItem> checkedItems = new List<ListViewItem>();
@@ -275,6 +279,7 @@ public partial class MainForm : Form
         respondedMacsInCycle.Clear();
     }
 
+    // 오래된 타임스탬프 정리 (5초 이전 데이터 삭제)
     private void CleanupOldTimestamps()
     {
         var cutoff = DateTime.UtcNow.AddSeconds(-5);
