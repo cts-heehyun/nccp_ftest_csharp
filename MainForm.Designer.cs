@@ -45,10 +45,14 @@ namespace UdpUnicast
             colMismatchCount = new ColumnHeader();
             grpLog = new GroupBox();
             txtLog = new TextBox();
+            lblSendCountLimit = new Label();
+            numSendCountLimit = new NumericUpDown();
+            chkContinuousSend = new CheckBox();
             grpSettings.SuspendLayout();
             grpSend.SuspendLayout();
             ((System.ComponentModel.ISupportInitialize)numDummySize).BeginInit();
             ((System.ComponentModel.ISupportInitialize)numInterval).BeginInit();
+            ((System.ComponentModel.ISupportInitialize)numSendCountLimit).BeginInit();
             ((System.ComponentModel.ISupportInitialize)splitContainer).BeginInit();
             splitContainer.Panel1.SuspendLayout();
             splitContainer.Panel2.SuspendLayout();
@@ -194,9 +198,12 @@ namespace UdpUnicast
             grpSend.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
             grpSend.Controls.Add(lblDummySize);
             grpSend.Controls.Add(numDummySize);
+            grpSend.Controls.Add(lblSendCountLimit);
+            grpSend.Controls.Add(numSendCountLimit);
             grpSend.Controls.Add(lblInterval);
             grpSend.Controls.Add(numInterval);
             grpSend.Controls.Add(chkPeriodicSend);
+            grpSend.Controls.Add(chkContinuousSend);
             grpSend.Controls.Add(lblSendMessage);
             grpSend.Controls.Add(txtSendMessage);
             grpSend.Controls.Add(btnSend);
@@ -225,6 +232,25 @@ namespace UdpUnicast
             numDummySize.Size = new Size(70, 23);
             numDummySize.TabIndex = 9;
             numDummySize.Value = new decimal(new int[] { 100, 0, 0, 0 });
+            // 
+            // lblSendCountLimit
+            // 
+            lblSendCountLimit.AutoSize = true;
+            lblSendCountLimit.Location = new Point(490, 28);
+            lblSendCountLimit.Name = "lblSendCountLimit";
+            lblSendCountLimit.Size = new Size(105, 15);
+            lblSendCountLimit.TabIndex = 10;
+            lblSendCountLimit.Text = "Send Count Limit:";
+            // 
+            // numSendCountLimit
+            // 
+            numSendCountLimit.Location = new Point(600, 26);
+            numSendCountLimit.Maximum = new decimal(new int[] { 60000, 0, 0, 0 });
+            numSendCountLimit.Minimum = new decimal(new int[] { 1, 0, 0, 0 });
+            numSendCountLimit.Name = "numSendCountLimit";
+            numSendCountLimit.Size = new Size(70, 23);
+            numSendCountLimit.TabIndex = 11;
+            numSendCountLimit.Value = new decimal(new int[] { 1, 0, 0, 0 });
             // 
             // lblInterval
             // 
@@ -255,6 +281,17 @@ namespace UdpUnicast
             chkPeriodicSend.Text = "Send Periodically";
             chkPeriodicSend.UseVisualStyleBackColor = true;
             chkPeriodicSend.CheckedChanged += chkPeriodicSend_CheckedChanged;
+            // 
+            // chkContinuousSend
+            // 
+            chkContinuousSend.AutoSize = true;
+            chkContinuousSend.Location = new Point(680, 27);
+            chkContinuousSend.Name = "chkContinuousSend";
+            chkContinuousSend.Size = new Size(115, 19);
+            chkContinuousSend.TabIndex = 12;
+            chkContinuousSend.Text = "Continuous Send";
+            chkContinuousSend.UseVisualStyleBackColor = true;
+            chkContinuousSend.CheckedChanged += chkContinuousSend_CheckedChanged;
             // 
             // splitContainer
             // 
@@ -353,6 +390,7 @@ namespace UdpUnicast
             grpSend.PerformLayout();
             ((System.ComponentModel.ISupportInitialize)numDummySize).EndInit();
             ((System.ComponentModel.ISupportInitialize)numInterval).EndInit();
+            ((System.ComponentModel.ISupportInitialize)numSendCountLimit).EndInit();
             splitContainer.Panel1.ResumeLayout(false);
             splitContainer.Panel2.ResumeLayout(false);
             ((System.ComponentModel.ISupportInitialize)splitContainer).EndInit();
@@ -384,6 +422,9 @@ namespace UdpUnicast
         private System.Windows.Forms.Label lblInterval;
         private System.Windows.Forms.Label lblDummySize;
         private System.Windows.Forms.NumericUpDown numDummySize;
+        private System.Windows.Forms.Label lblSendCountLimit;
+        private System.Windows.Forms.NumericUpDown numSendCountLimit;
+        private System.Windows.Forms.CheckBox chkContinuousSend;
         private System.Windows.Forms.SplitContainer splitContainer;
         private System.Windows.Forms.ListView lvMacStatus;
         private System.Windows.Forms.ColumnHeader colMacAddress;

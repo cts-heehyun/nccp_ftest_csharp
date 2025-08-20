@@ -11,6 +11,7 @@ public partial class MainForm : Form
     private CancellationTokenSource? listenerCts;
     private CancellationTokenSource? periodicSendCts;
     private int messageCounter = 0;
+    private int periodicSendCount = 0;
     private int lastGlobalSentMessageCounter = -1; // New field
 
     private readonly ConcurrentDictionary<string, ListViewItem> macListViewItems = new();
@@ -46,6 +47,7 @@ public partial class MainForm : Form
         cmbBindIp.SelectedIndex = 0;
         grpSend.Enabled = false;
         chkPeriodicSend_CheckedChanged(this, EventArgs.Empty);
+        chkContinuousSend_CheckedChanged(this, EventArgs.Empty);
     }
 
     private void btnStartStopListen_Click(object sender, EventArgs e)
@@ -223,10 +225,12 @@ public partial class MainForm : Form
     {
         if (!ValidateAndGetTarget(out IPEndPoint? targetEndPoint, isPeriodic: true)) return;
         messageCounter = 0;
+        periodicSendCount = 0;
         var localCts = new CancellationTokenSource();
         this.periodicSendCts = localCts;
         var interval = (int)numInterval.Value;
         var dummySize = (int)numDummySize.Value;
+        var sendLimit = (int)numSendCountLimit.Value;
 
         // Reset error counters in ListView
         InvokeIfRequired(lvMacStatus, () =>
@@ -246,6 +250,13 @@ public partial class MainForm : Form
             {
                 while (await timer.WaitForNextTickAsync(localCts.Token))
                 {
+                    if (!chkContinuousSend.Checked && periodicSendCount >= sendLimit)
+                    {
+                        AppendLog($"Periodic send limit ({sendLimit}) reached. Stopping.");
+                        InvokeIfRequired(this, StopPeriodicSend);
+                        break;
+                    }
+
                     CleanupOldTimestamps();
                     CheckForMissedResponses();
                     var dummyData = new string('X', dummySize);
@@ -258,6 +269,7 @@ public partial class MainForm : Form
                     await udpClient!.SendAsync(bytesToSend, targetEndPoint!);
                     AppendLog($"Sent: <FTEST,{messageCounter},...>");
                     messageCounter++;
+                    periodicSendCount++;
                     if (messageCounter > 65535) messageCounter = 1;
                 }
             }
@@ -337,16 +349,29 @@ public partial class MainForm : Form
         SetPeriodicSendUIState(isSending: false);
     }
 
+    private void chkContinuousSend_CheckedChanged(object sender, EventArgs e)
+    {
+        SetPeriodicSendUIState(isSending: false);
+    }
+
     private void SetPeriodicSendUIState(bool isSending)
     {
         bool isPeriodicChecked = chkPeriodicSend.Checked;
+        bool isContinuousChecked = chkContinuousSend.Checked;
+
         lblInterval.Enabled = isPeriodicChecked;
         numInterval.Enabled = isPeriodicChecked && !isSending;
         lblDummySize.Enabled = isPeriodicChecked;
         numDummySize.Enabled = isPeriodicChecked && !isSending;
+
+        lblSendCountLimit.Enabled = isPeriodicChecked && !isContinuousChecked;
+        numSendCountLimit.Enabled = isPeriodicChecked && !isContinuousChecked && !isSending;
+
         txtSendMessage.Enabled = !isPeriodicChecked;
         lblSendMessage.Enabled = !isPeriodicChecked;
         btnSend.Text = isPeriodicChecked ? (isSending ? "Stop" : "Start") : "Send";
+
+        chkContinuousSend.Enabled = isPeriodicChecked;
     }
 
     private void chkEnableBroadcast_CheckedChanged(object sender, EventArgs e)
@@ -359,7 +384,7 @@ public partial class MainForm : Form
     {
         InvokeIfRequired(txtLog, () =>
         {
-            txtLog.AppendText($"[{DateTime.Now:HH:mm:ss}] {message}{Environment.NewLine}");
+            txtLog.AppendText($"[{DateTime.Now:HH:mm:ss.fff}] {message}{Environment.NewLine}");
         });
     }
 

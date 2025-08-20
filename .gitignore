@@ -7,6 +7,7 @@ Release
 
 # Visual Studio #
 #################
+.vs
 ipch
 *.aps
 *.sdf
