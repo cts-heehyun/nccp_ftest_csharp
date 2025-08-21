@@ -1,3 +1,4 @@
+using ScottPlot.WinForms;
 namespace UdpUnicast
 {
     partial class MainForm
@@ -50,6 +51,8 @@ namespace UdpUnicast
             tabControl = new TabControl();
             tabPageMacList = new TabPage();
             tabPageLog = new TabPage();
+            tabPageGraph = new TabPage();
+            formsPlot = new ScottPlot.WinForms.FormsPlot();
             grpSettings.SuspendLayout();
             grpSend.SuspendLayout();
             ((System.ComponentModel.ISupportInitialize)numDummySize).BeginInit();
@@ -359,6 +362,7 @@ namespace UdpUnicast
             tabControl.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
             tabControl.Controls.Add(tabPageMacList);
             tabControl.Controls.Add(tabPageLog);
+            tabControl.Controls.Add(tabPageGraph);
             tabControl.Location = new Point(12, 329);
             tabControl.Name = "tabControl";
             tabControl.SelectedIndex = 0;
@@ -386,6 +390,25 @@ namespace UdpUnicast
             tabPageLog.TabIndex = 1;
             tabPageLog.Text = "Log";
             tabPageLog.UseVisualStyleBackColor = true;
+
+            // tabPageGraph
+            // 
+            tabPageGraph.Controls.Add(formsPlot);
+            tabPageGraph.Location = new Point(4, 24);
+            tabPageGraph.Name = "tabPageGraph";
+            tabPageGraph.Padding = new Padding(3);
+            tabPageGraph.Size = new Size(818, 433);
+            tabPageGraph.TabIndex = 2;
+            tabPageGraph.Text = "Graph";
+            tabPageGraph.UseVisualStyleBackColor = true;
+
+            // formsPlot
+            // 
+            formsPlot.Dock = DockStyle.Fill;
+            formsPlot.Location = new Point(3, 3);
+            formsPlot.Name = "formsPlot";
+            formsPlot.Size = new Size(812, 427);
+            formsPlot.TabIndex = 0;
             // 
             // MainForm
             // 
@@ -448,7 +471,9 @@ namespace UdpUnicast
         private System.Windows.Forms.ColumnHeader colMismatchCount;
         private System.Windows.Forms.Label lblDeviceCount;
         private System.Windows.Forms.TabControl tabControl;
-        private System.Windows.Forms.TabPage tabPageMacList;
-        private System.Windows.Forms.TabPage tabPageLog;
+    private System.Windows.Forms.TabPage tabPageMacList;
+    private System.Windows.Forms.TabPage tabPageLog;
+    private System.Windows.Forms.TabPage tabPageGraph;
+    private ScottPlot.WinForms.FormsPlot formsPlot;
     }
 }

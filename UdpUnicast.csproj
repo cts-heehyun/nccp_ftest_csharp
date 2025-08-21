@@ -9,4 +9,8 @@
     <RootNamespace>UdpUnicast</RootNamespace>
   </PropertyGroup>
 
+    <ItemGroup>
+      <PackageReference Include="ScottPlot.WinForms" Version="5.*" />
+    </ItemGroup>
+
 </Project>

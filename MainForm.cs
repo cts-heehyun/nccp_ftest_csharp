@@ -1,12 +1,17 @@
 using System.Collections.Concurrent;
 using System.Net;
 using System.Net.Sockets;
+
+using ScottPlot.WinForms;
 using System.Text;
 
 namespace UdpUnicast;
 
 public partial class MainForm : Form
 {
+    // IP별 (시퀀스, 응답시간) 데이터 관리
+    private readonly Dictionary<string, List<(int seq, double rtt)>> ipResponseData = new();
+    private string? currentGraphIp = null;
     private readonly UdpManager _udpManager;
     private bool _isListening = false;
     private bool _isPeriodicSending = false;
@@ -29,6 +34,8 @@ public partial class MainForm : Form
         else action();
     }
 
+    private ComboBox cmbGraphIp;
+
     public MainForm()
     {
         InitializeComponent();
@@ -44,6 +51,21 @@ public partial class MainForm : Form
             Interval = 1000 // 1초마다 체크
         };
         _periodicCheckTimer.Tick += PeriodicCheckTimer_Tick;
+
+        // 그래프용 IP 선택 콤보박스 생성 및 탭에 추가
+        cmbGraphIp = new ComboBox
+        {
+            DropDownStyle = ComboBoxStyle.DropDownList,
+            Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
+            Width = 200,
+            Location = new System.Drawing.Point(10, 10),
+            Name = "cmbGraphIp"
+        };
+        cmbGraphIp.SelectedIndexChanged += CmbGraphIp_SelectedIndexChanged;
+        tabPageGraph.Controls.Add(cmbGraphIp);
+        formsPlot.Location = new System.Drawing.Point(10, 40);
+        formsPlot.Size = new System.Drawing.Size(tabPageGraph.Width - 20, tabPageGraph.Height - 50);
+        formsPlot.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
     }
 
     /// <summary>
@@ -127,12 +149,34 @@ public partial class MainForm : Form
                     else
                     {
                         respondedMacsInCycle.TryAdd(mac, true);
-                    }
-
-                    if (_udpManager.SentMessageTimestamps.TryGetValue(echoedSeq, out DateTime sendTime))
-                    {
-                        var rtt = (DateTime.UtcNow - sendTime).TotalMilliseconds;
-                        UpdateDeviceResponseTime(mac, rtt);
+                        if (_udpManager.SentMessageTimestamps.TryGetValue(echoedSeq, out DateTime sendTime))
+                        {
+                            var rtt = (DateTime.UtcNow - sendTime).TotalMilliseconds;
+                            UpdateDeviceResponseTime(mac, rtt);
+                            // --- 그래프 데이터 추가 및 갱신 ---
+                            string ip = remoteEP.Address.ToString();
+                            lock (ipResponseData)
+                            {
+                                if (!ipResponseData.ContainsKey(ip))
+                                {
+                                    ipResponseData[ip] = new List<(int, double)>();
+                                    InvokeIfRequired(cmbGraphIp, () =>
+                                    {
+                                        cmbGraphIp.Items.Add(ip);
+                                        if (cmbGraphIp.Items.Count == 1)
+                                        {
+                                            cmbGraphIp.SelectedIndex = 0;
+                                            currentGraphIp = ip;
+                                        }
+                                    });
+                                }
+                                ipResponseData[ip].Add((echoedSeq, rtt));
+                                if (ip == currentGraphIp)
+                                {
+                                    UpdateGraph(ip);
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -141,6 +185,42 @@ public partial class MainForm : Form
         {
             AppendLog($"Received from {remoteEP}: {rawMessage}");
         }
+    }
+
+    // 콤보박스 선택 변경 시 그래프 갱신
+    private void CmbGraphIp_SelectedIndexChanged(object? sender, EventArgs e)
+    {
+        if (cmbGraphIp.SelectedItem is string ip)
+        {
+            currentGraphIp = ip;
+            UpdateGraph(ip);
+        }
+    }
+
+    // 그래프 갱신
+    private void UpdateGraph(string ip)
+    {
+        InvokeIfRequired(formsPlot, () =>
+        {
+            if (!ipResponseData.ContainsKey(ip) || ipResponseData[ip].Count == 0)
+            {
+                formsPlot.Plot.Clear();
+                formsPlot.Refresh();
+                return;
+            }
+            var data = ipResponseData[ip];
+            double[] xs = data.Select(d => (double)d.seq).ToArray();
+            double[] ys = data.Select(d => d.rtt).ToArray();
+            formsPlot.Plot.Clear();
+            var scatter = formsPlot.Plot.Add.Scatter(xs, ys, color: ScottPlot.Colors.Blue);
+            scatter.MarkerSize = 5;
+            scatter.LineWidth = 0;
+            formsPlot.Plot.Title($"(IP: {ip})");
+            formsPlot.Plot.XLabel("Seq. Number");
+            formsPlot.Plot.YLabel("Rep Time(ms)");
+            formsPlot.Plot.Axes.AutoScale();
+            formsPlot.Refresh();
+        });
     }
 
     /// <summary>
@@ -226,14 +306,32 @@ public partial class MainForm : Form
             {
                 if (!ValidateAndGetTarget(out IPEndPoint? targetEndPoint, isPeriodic: true)) return;
                 ResetDeviceErrorAndMismatch();
+                ResetGraphData();
                 _udpManager.StartPeriodicSend(targetEndPoint!, chkEnableBroadcast.Checked, (int)numInterval.Value, (int)numDummySize.Value, (int)numSendCountLimit.Value, chkContinuousSend.Checked);
             }
         }
         else
         {
             if (!ValidateAndGetTarget(out IPEndPoint? targetEndPoint, isPeriodic: false)) return;
+            ResetGraphData();
             await _udpManager.SendSingleMessageAsync(targetEndPoint!, chkEnableBroadcast.Checked, txtSendMessage.Text);
         }
+    }
+
+    // 그래프 데이터 및 UI 초기화
+    private void ResetGraphData()
+    {
+        lock (ipResponseData)
+        {
+            ipResponseData.Clear();
+        }
+        InvokeIfRequired(cmbGraphIp, () =>
+        {
+            cmbGraphIp.Items.Clear();
+            currentGraphIp = null;
+        });
+        formsPlot.Plot.Clear();
+        formsPlot.Refresh();
     }
 
     /// <summary>
