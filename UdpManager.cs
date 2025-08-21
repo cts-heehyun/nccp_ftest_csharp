@@ -17,6 +17,8 @@ namespace UdpUnicast
         public event Action? ListenerStopped;
         public event Action<byte[], IPEndPoint>? MessageReceived;
         public event Action<string>? PeriodicSendStatusChanged;
+        // 송수신 로그 기록용 콜백 (단일 파일)
+        public Action<string, string, string, long, long?>? SendRecvLogCallback; // (type, sourceIp, fileName, sendTimeMs, responseTimeMs)
 
         private UdpClient? _udpClient;
         private CancellationTokenSource? _listenerCts;
@@ -78,6 +80,8 @@ namespace UdpUnicast
                     if (client == null) break;
                     var receivedResult = await client.ReceiveAsync(token);
                     MessageReceived?.Invoke(receivedResult.Buffer, receivedResult.RemoteEndPoint);
+                    // 수신 로그 콜백 호출 (type, sourceIp, 파일명 null, 송신 시간 0, 응답 시간 ms)
+                    SendRecvLogCallback?.Invoke("recv", receivedResult.RemoteEndPoint.Address.ToString(), null, 0, (long)(DateTime.UtcNow - DateTime.UnixEpoch).TotalMilliseconds);
                 }
                 catch (OperationCanceledException)
                 {
@@ -132,6 +136,11 @@ namespace UdpUnicast
             _periodicSendCts = new CancellationTokenSource();
             var localCts = _periodicSendCts;
 
+            // 파일명 생성 및 이벤트 알림 (MainForm에서 파일 관리)
+            string fileTimestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
+            string logFileName = $"comm_{fileTimestamp}.csv";
+            PeriodicSendStatusChanged?.Invoke($"Start|{logFileName}");
+
             Task.Run(async () =>
             {
                 using var timer = new PeriodicTimer(TimeSpan.FromMilliseconds(interval));
@@ -150,12 +159,17 @@ namespace UdpUnicast
                         var message = $"<FTEST,{_messageCounter},{dummyData}>";
                         byte[] bytesToSend = Encoding.UTF8.GetBytes(message);
 
+                        var now = DateTime.UtcNow;
                         LastGlobalSentMessageCounter = _messageCounter;
-                        SentMessageTimestamps[_messageCounter] = DateTime.UtcNow;
+                        SentMessageTimestamps[_messageCounter] = now;
+
+                        // 송신 로그 콜백 호출 (type, sourceIp, 파일명, 송신 시간 ms, 응답 시간 null)
+                        string localIp = ((IPEndPoint)client.Client.LocalEndPoint!).Address.ToString();
+                        SendRecvLogCallback?.Invoke("send", localIp, logFileName, (long)(now - DateTime.UnixEpoch).TotalMilliseconds, null);
 
                         client.EnableBroadcast = enableBroadcast;
                         await client.SendAsync(bytesToSend, targetEndPoint);
-                        LogMessage?.Invoke($"Sent: <FTEST,{_messageCounter},...>");
+                        //LogMessage?.Invoke($"Sent: <FTEST,{_messageCounter},...>");
                         _messageCounter++;
                         _periodicSendCount++;
                         if (_messageCounter > 65535) _messageCounter = 1;
@@ -165,7 +179,7 @@ namespace UdpUnicast
                 catch (Exception ex)
                 {
                     LogMessage?.Invoke($"Periodic send error: {ex.Message}");
-                    PeriodicSendStatusChanged?.Invoke("Stop");
+                    PeriodicSendStatusChanged?.Invoke($"Stop|{logFileName}");
                 }
             });
 

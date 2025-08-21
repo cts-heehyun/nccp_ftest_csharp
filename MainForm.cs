@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.Net;
 using System.Net.Sockets;
+using System.IO;
 
 using ScottPlot.WinForms;
 using System.Text;
@@ -25,6 +26,12 @@ public partial class MainForm : Form
     private const string ResponseTimeDefault = "N/A";
     private const string TimeoutText = "Timeout";
 
+    // CSV 로그 관련 필드
+    private string? _currentLogFileName;
+    private StreamWriter? _logWriter;
+    private readonly object _logLock = new();
+    private readonly Dictionary<(string ip, int seq), long> _sendLogMap = new();
+
     /// <summary>
     /// UI 스레드 안전 호출 유틸
     /// </summary>
@@ -45,6 +52,7 @@ public partial class MainForm : Form
         _udpManager.ListenerStopped += UdpManager_ListenerStopped;
         _udpManager.MessageReceived += UdpManager_MessageReceived;
         _udpManager.PeriodicSendStatusChanged += UdpManager_PeriodicSendStatusChanged;
+        _udpManager.SendRecvLogCallback = UdpManager_SendRecvLogCallback;
 
         _periodicCheckTimer = new System.Windows.Forms.Timer
         {
@@ -174,6 +182,28 @@ public partial class MainForm : Form
                                 if (ip == currentGraphIp)
                                 {
                                     UpdateGraph(ip);
+                                }
+                            }
+
+                            // --- CSV 로그 기록 ---
+                            lock (_logLock)
+                            {
+                                if (_logWriter != null)
+                                {
+                                    if (_sendLogMap.TryGetValue((ip, echoedSeq), out long sendMs))
+                                    {
+                                        // 송신 시간: ms → DateTime 변환 후 "HH:mm:ss.fff" 형식
+                                        var dt = DateTimeOffset.FromUnixTimeMilliseconds(sendMs).ToLocalTime().DateTime;
+                                        string sendTimeStr = dt.ToString("HH:mm:ss.fff");
+                                        // 응답 시간: ms 소수점 첫째 자리
+                                        string rttStr = rtt.ToString("F1");
+                                        _logWriter.WriteLine($"recv,{ip},{echoedSeq},{sendTimeStr},{rttStr}");
+                                    }
+                                    else
+                                    {
+                                        string rttStr = rtt.ToString("F1");
+                                        _logWriter.WriteLine($"recv,{ip},{echoedSeq},,{rttStr}");
+                                    }
                                 }
                             }
                         }
@@ -351,9 +381,50 @@ public partial class MainForm : Form
     
     private void UdpManager_PeriodicSendStatusChanged(string status)
     {
+        // status: "Start|파일명" 또는 "Stop|파일명"
+        var parts = status.Split('|');
+        var state = parts[0];
+        var fileName = parts.Length > 1 ? parts[1] : null;
+        if (state == "Start" && fileName != null)
+        {
+            _currentLogFileName = fileName;
+            try
+            {
+                _logWriter = new StreamWriter(_currentLogFileName, false, Encoding.UTF8);
+                _logWriter.WriteLine("type,ip,seq,sendTimeMs,responseTimeMs");
+            }
+            catch (Exception ex)
+            {
+                AppendLog($"CSV 파일 생성 실패: {ex.Message}");
+            }
+        }
+        else if (state == "Stop" && _logWriter != null)
+        {
+            try { _logWriter.Flush(); _logWriter.Close(); } catch { }
+            _logWriter = null;
+            // 오류 카운트 저장
+            var errFile = Path.ChangeExtension(_currentLogFileName, ".err.csv");
+            try
+            {
+                using var errWriter = new StreamWriter(errFile, false, Encoding.UTF8);
+                errWriter.WriteLine("mac,ip,errorCount,mismatchCount");
+                foreach (var item in macListViewItems.Values)
+                {
+                    var mac = item.Text;
+                    var ip = item.SubItems[1].Text;
+                    var err = item.SubItems[2].Text;
+                    var mismatch = item.SubItems[4].Text;
+                    errWriter.WriteLine($"{mac},{ip},{err},{mismatch}");
+                }
+            }
+            catch (Exception ex)
+            {
+                AppendLog($"오류 카운트 저장 실패: {ex.Message}");
+            }
+        }
         InvokeIfRequired(this, () =>
         {
-            if (status == "Start")
+            if (state == "Start")
             {
                 _isPeriodicSending = true;
                 SetPeriodicSendUIState(isSending: true);
@@ -373,12 +444,27 @@ public partial class MainForm : Form
         CleanupOldTimestamps();
         CheckForMissedResponses();
     }
+    
+    private void UdpManager_SendRecvLogCallback(string type, string ip, string? fileName, long sendTimeMs, long? responseTimeMs)
+    {
+        lock (_logLock)
+        {
+            if (_logWriter == null) return;
+            if (type == "send")
+            {
+                int seq = _udpManager.LastGlobalSentMessageCounter;
+                _sendLogMap[(ip, seq)] = sendTimeMs;
+                _logWriter.WriteLine($"send,{ip},{seq},{DateTime.Now:HH:mm:ss.fff},");
+            }
+            // 수신은 MainForm에서 직접 기록 (아래에서 구현)
+        }
+    }
 
     private void CheckForMissedResponses()
     {
         List<ListViewItem> checkedItems = new List<ListViewItem>();
         InvokeIfRequired(lvMacStatus, () => checkedItems = lvMacStatus.CheckedItems.Cast<ListViewItem>().ToList());
-        
+
         foreach (var item in checkedItems)
         {
             string mac = item.Text;
