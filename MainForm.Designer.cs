@@ -33,10 +33,12 @@ namespace UdpUnicast
             grpSend = new GroupBox();
             lblDummySize = new Label();
             numDummySize = new NumericUpDown();
+            lblSendCountLimit = new Label();
+            numSendCountLimit = new NumericUpDown();
             lblInterval = new Label();
             numInterval = new NumericUpDown();
             chkPeriodicSend = new CheckBox();
-            splitContainer = new SplitContainer();
+            chkContinuousSend = new CheckBox();
             lvMacStatus = new ListView();
             colMacAddress = new ColumnHeader();
             colIpAddress = new ColumnHeader();
@@ -45,19 +47,18 @@ namespace UdpUnicast
             colMismatchCount = new ColumnHeader();
             grpLog = new GroupBox();
             txtLog = new TextBox();
-            lblSendCountLimit = new Label();
-            numSendCountLimit = new NumericUpDown();
-            chkContinuousSend = new CheckBox();
+            tabControl = new TabControl();
+            tabPageMacList = new TabPage();
+            tabPageLog = new TabPage();
             grpSettings.SuspendLayout();
             grpSend.SuspendLayout();
             ((System.ComponentModel.ISupportInitialize)numDummySize).BeginInit();
-            ((System.ComponentModel.ISupportInitialize)numInterval).BeginInit();
             ((System.ComponentModel.ISupportInitialize)numSendCountLimit).BeginInit();
-            ((System.ComponentModel.ISupportInitialize)splitContainer).BeginInit();
-            splitContainer.Panel1.SuspendLayout();
-            splitContainer.Panel2.SuspendLayout();
-            splitContainer.SuspendLayout();
+            ((System.ComponentModel.ISupportInitialize)numInterval).BeginInit();
             grpLog.SuspendLayout();
+            tabControl.SuspendLayout();
+            tabPageMacList.SuspendLayout();
+            tabPageLog.SuspendLayout();
             SuspendLayout();
             // 
             // lblIpAddress
@@ -269,7 +270,7 @@ namespace UdpUnicast
             numInterval.Name = "numInterval";
             numInterval.Size = new Size(70, 23);
             numInterval.TabIndex = 2;
-            numInterval.Value = new decimal(new int[] { 100, 0, 0, 0 });
+            numInterval.Value = new decimal(new int[] { 150, 0, 0, 0 });
             // 
             // chkPeriodicSend
             // 
@@ -287,38 +288,20 @@ namespace UdpUnicast
             chkContinuousSend.AutoSize = true;
             chkContinuousSend.Location = new Point(680, 27);
             chkContinuousSend.Name = "chkContinuousSend";
-            chkContinuousSend.Size = new Size(115, 19);
+            chkContinuousSend.Size = new Size(119, 19);
             chkContinuousSend.TabIndex = 12;
             chkContinuousSend.Text = "Continuous Send";
             chkContinuousSend.UseVisualStyleBackColor = true;
             chkContinuousSend.CheckedChanged += chkContinuousSend_CheckedChanged;
-            // 
-            // splitContainer
-            // 
-            splitContainer.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
-            splitContainer.Location = new Point(12, 329);
-            splitContainer.Name = "splitContainer";
-            splitContainer.Orientation = Orientation.Horizontal;
-            // 
-            // splitContainer.Panel1
-            // 
-            splitContainer.Panel1.Controls.Add(lvMacStatus);
-            // 
-            // splitContainer.Panel2
-            // 
-            splitContainer.Panel2.Controls.Add(grpLog);
-            splitContainer.Size = new Size(826, 461);
-            splitContainer.SplitterDistance = 228;
-            splitContainer.TabIndex = 3;
             // 
             // lvMacStatus
             // 
             lvMacStatus.CheckBoxes = true;
             lvMacStatus.Columns.AddRange(new ColumnHeader[] { colMacAddress, colIpAddress, colErrorCount, colResponseTime, colMismatchCount });
             lvMacStatus.Dock = DockStyle.Fill;
-            lvMacStatus.Location = new Point(0, 0);
+            lvMacStatus.Location = new Point(3, 3);
             lvMacStatus.Name = "lvMacStatus";
-            lvMacStatus.Size = new Size(826, 228);
+            lvMacStatus.Size = new Size(812, 427);
             lvMacStatus.TabIndex = 0;
             lvMacStatus.UseCompatibleStateImageBehavior = false;
             lvMacStatus.View = View.Details;
@@ -346,15 +329,15 @@ namespace UdpUnicast
             // colMismatchCount
             // 
             colMismatchCount.Text = "Mismatch Count";
-            colMismatchCount.Width = 100;
+            colMismatchCount.Width = 150;
             // 
             // grpLog
             // 
             grpLog.Controls.Add(txtLog);
             grpLog.Dock = DockStyle.Fill;
-            grpLog.Location = new Point(0, 0);
+            grpLog.Location = new Point(3, 3);
             grpLog.Name = "grpLog";
-            grpLog.Size = new Size(826, 229);
+            grpLog.Size = new Size(812, 427);
             grpLog.TabIndex = 0;
             grpLog.TabStop = false;
             grpLog.Text = "Log";
@@ -368,15 +351,48 @@ namespace UdpUnicast
             txtLog.Name = "txtLog";
             txtLog.ReadOnly = true;
             txtLog.ScrollBars = ScrollBars.Vertical;
-            txtLog.Size = new Size(820, 207);
+            txtLog.Size = new Size(806, 405);
             txtLog.TabIndex = 0;
+            // 
+            // tabControl
+            // 
+            tabControl.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
+            tabControl.Controls.Add(tabPageMacList);
+            tabControl.Controls.Add(tabPageLog);
+            tabControl.Location = new Point(12, 329);
+            tabControl.Name = "tabControl";
+            tabControl.SelectedIndex = 0;
+            tabControl.Size = new Size(826, 461);
+            tabControl.TabIndex = 3;
+            // 
+            // tabPageMacList
+            // 
+            tabPageMacList.Controls.Add(lvMacStatus);
+            tabPageMacList.Location = new Point(4, 24);
+            tabPageMacList.Name = "tabPageMacList";
+            tabPageMacList.Padding = new Padding(3);
+            tabPageMacList.Size = new Size(818, 433);
+            tabPageMacList.TabIndex = 0;
+            tabPageMacList.Text = "MAC List";
+            tabPageMacList.UseVisualStyleBackColor = true;
+            // 
+            // tabPageLog
+            // 
+            tabPageLog.Controls.Add(grpLog);
+            tabPageLog.Location = new Point(4, 24);
+            tabPageLog.Name = "tabPageLog";
+            tabPageLog.Padding = new Padding(3);
+            tabPageLog.Size = new Size(818, 433);
+            tabPageLog.TabIndex = 1;
+            tabPageLog.Text = "Log";
+            tabPageLog.UseVisualStyleBackColor = true;
             // 
             // MainForm
             // 
             AutoScaleDimensions = new SizeF(7F, 15F);
             AutoScaleMode = AutoScaleMode.Font;
             ClientSize = new Size(850, 802);
-            Controls.Add(splitContainer);
+            Controls.Add(tabControl);
             Controls.Add(grpSend);
             Controls.Add(grpSettings);
             MinimumSize = new Size(540, 630);
@@ -389,14 +405,13 @@ namespace UdpUnicast
             grpSend.ResumeLayout(false);
             grpSend.PerformLayout();
             ((System.ComponentModel.ISupportInitialize)numDummySize).EndInit();
-            ((System.ComponentModel.ISupportInitialize)numInterval).EndInit();
             ((System.ComponentModel.ISupportInitialize)numSendCountLimit).EndInit();
-            splitContainer.Panel1.ResumeLayout(false);
-            splitContainer.Panel2.ResumeLayout(false);
-            ((System.ComponentModel.ISupportInitialize)splitContainer).EndInit();
-            splitContainer.ResumeLayout(false);
+            ((System.ComponentModel.ISupportInitialize)numInterval).EndInit();
             grpLog.ResumeLayout(false);
             grpLog.PerformLayout();
+            tabControl.ResumeLayout(false);
+            tabPageMacList.ResumeLayout(false);
+            tabPageLog.ResumeLayout(false);
             ResumeLayout(false);
         }
 
@@ -425,7 +440,6 @@ namespace UdpUnicast
         private System.Windows.Forms.Label lblSendCountLimit;
         private System.Windows.Forms.NumericUpDown numSendCountLimit;
         private System.Windows.Forms.CheckBox chkContinuousSend;
-        private System.Windows.Forms.SplitContainer splitContainer;
         private System.Windows.Forms.ListView lvMacStatus;
         private System.Windows.Forms.ColumnHeader colMacAddress;
         private System.Windows.Forms.ColumnHeader colIpAddress;
@@ -433,5 +447,8 @@ namespace UdpUnicast
         private System.Windows.Forms.ColumnHeader colResponseTime;
         private System.Windows.Forms.ColumnHeader colMismatchCount;
         private System.Windows.Forms.Label lblDeviceCount;
+        private System.Windows.Forms.TabControl tabControl;
+        private System.Windows.Forms.TabPage tabPageMacList;
+        private System.Windows.Forms.TabPage tabPageLog;
     }
 }
