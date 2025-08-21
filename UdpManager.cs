@@ -20,6 +20,9 @@ namespace UdpUnicast
         // 송수신 로그 기록용 콜백 (단일 파일)
         public Action<string, string, string, long, long?>? SendRecvLogCallback; // (type, sourceIp, fileName, sendTimeMs, responseTimeMs)
 
+        public Action? CheckForMissedResponses;
+        public Action? CleanupOldTimestamps;
+
         private UdpClient? _udpClient;
         private CancellationTokenSource? _listenerCts;
         private CancellationTokenSource? _periodicSendCts;
@@ -154,6 +157,9 @@ namespace UdpUnicast
                             PeriodicSendStatusChanged?.Invoke("Stop");
                             break;
                         }
+
+                        CheckForMissedResponses?.Invoke();
+                        CleanupOldTimestamps?.Invoke();
 
                         var dummyData = new string('X', dummySize);
                         var message = $"<FTEST,{_messageCounter},{dummyData}>";

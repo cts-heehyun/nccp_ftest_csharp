@@ -54,11 +54,8 @@ public partial class MainForm : Form
         _udpManager.PeriodicSendStatusChanged += UdpManager_PeriodicSendStatusChanged;
         _udpManager.SendRecvLogCallback = UdpManager_SendRecvLogCallback;
 
-        _periodicCheckTimer = new System.Windows.Forms.Timer
-        {
-            Interval = 1000 // 1초마다 체크
-        };
-        _periodicCheckTimer.Tick += PeriodicCheckTimer_Tick;
+        _udpManager.CheckForMissedResponses = CheckForMissedResponses;
+        _udpManager.CleanupOldTimestamps = CleanupOldTimestamps;
 
         // 그래프용 IP 선택 콤보박스 생성 및 탭에 추가
         cmbGraphIp = new ComboBox
@@ -428,21 +425,13 @@ public partial class MainForm : Form
             {
                 _isPeriodicSending = true;
                 SetPeriodicSendUIState(isSending: true);
-                _periodicCheckTimer.Start();
             }
             else // Stop or Limit Reached
             {
                 _isPeriodicSending = false;
                 SetPeriodicSendUIState(isSending: false);
-                _periodicCheckTimer.Stop();
             }
         });
-    }
-
-    private void PeriodicCheckTimer_Tick(object? sender, EventArgs e)
-    {
-        CleanupOldTimestamps();
-        CheckForMissedResponses();
     }
     
     private void UdpManager_SendRecvLogCallback(string type, string ip, string? fileName, long sendTimeMs, long? responseTimeMs)
@@ -584,6 +573,5 @@ public partial class MainForm : Form
     private void MainForm_FormClosing(object sender, FormClosingEventArgs e)
     {
         try { _udpManager.Dispose(); } catch { }
-        try { _periodicCheckTimer.Dispose(); } catch { }
     }
 }
