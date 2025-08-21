@@ -1,3 +1,4 @@
+
 using System.Collections.Concurrent;
 using System.Net;
 using System.Net.Sockets;
@@ -5,6 +6,10 @@ using System.Text;
 
 namespace UdpUnicast
 {
+
+    /// <summary>
+    /// UDP 통신 및 주기적 전송 관리 클래스
+    /// </summary>
     public class UdpManager : IDisposable
     {
         public event Action<string>? LogMessage;
@@ -18,34 +23,48 @@ namespace UdpUnicast
         private CancellationTokenSource? _periodicSendCts;
         private int _messageCounter = 0;
         private int _periodicSendCount = 0;
+        private readonly object _udpLock = new();
+        private bool _disposed = false;
 
         public int LastGlobalSentMessageCounter { get; private set; } = -1;
         public ConcurrentDictionary<int, DateTime> SentMessageTimestamps { get; } = new();
 
+        /// <summary>
+        /// 지정한 IP로 리스너를 시작합니다.
+        /// </summary>
         public void StartListener(IPAddress ipAddress)
         {
-            try
+            lock (_udpLock)
             {
-                _udpClient = new UdpClient(new IPEndPoint(ipAddress, 0));
-                _listenerCts = new CancellationTokenSource();
-                Task.Run(() => ListenForMessages(_listenerCts.Token));
-                ListenerStarted?.Invoke((IPEndPoint)_udpClient.Client.LocalEndPoint!);
-            }
-            catch (Exception ex)
-            {
-                LogMessage?.Invoke($"Listener start failed: {ex.Message}");
-                _udpClient?.Dispose();
-                _udpClient = null;
+                try
+                {
+                    _udpClient = new UdpClient(new IPEndPoint(ipAddress, 0));
+                    _listenerCts = new CancellationTokenSource();
+                    Task.Run(() => ListenForMessages(_listenerCts.Token));
+                    ListenerStarted?.Invoke((IPEndPoint)_udpClient.Client.LocalEndPoint!);
+                }
+                catch (Exception ex)
+                {
+                    LogMessage?.Invoke($"Listener start failed: {ex.Message}");
+                    _udpClient?.Dispose();
+                    _udpClient = null;
+                }
             }
         }
 
+        /// <summary>
+        /// 리스너 및 주기적 전송을 중지합니다.
+        /// </summary>
         public void StopListener()
         {
-            StopPeriodicSend();
-            _listenerCts?.Cancel();
-            _udpClient?.Close();
-            _udpClient = null;
-            ListenerStopped?.Invoke();
+            lock (_udpLock)
+            {
+                StopPeriodicSend();
+                _listenerCts?.Cancel();
+                _udpClient?.Close();
+                _udpClient = null;
+                ListenerStopped?.Invoke();
+            }
         }
 
         private async Task ListenForMessages(CancellationToken token)
@@ -54,8 +73,10 @@ namespace UdpUnicast
             {
                 try
                 {
-                    if (_udpClient == null) break;
-                    var receivedResult = await _udpClient.ReceiveAsync(token);
+                    UdpClient? client;
+                    lock (_udpLock) { client = _udpClient; }
+                    if (client == null) break;
+                    var receivedResult = await client.ReceiveAsync(token);
                     MessageReceived?.Invoke(receivedResult.Buffer, receivedResult.RemoteEndPoint);
                 }
                 catch (OperationCanceledException)
@@ -69,19 +90,24 @@ namespace UdpUnicast
             }
         }
 
+        /// <summary>
+        /// 단일 메시지를 비동기로 전송합니다.
+        /// </summary>
         public async Task SendSingleMessageAsync(IPEndPoint targetEndPoint, bool enableBroadcast, string message)
         {
-            if (_udpClient == null) return;
+            UdpClient? client;
+            lock (_udpLock) { client = _udpClient; }
+            if (client == null) return;
             try
             {
-                _udpClient.EnableBroadcast = enableBroadcast;
+                client.EnableBroadcast = enableBroadcast;
                 var fullMessage = $"<FTEST,{_messageCounter},{message}>";
                 byte[] bytesToSend = Encoding.UTF8.GetBytes(fullMessage);
 
                 LastGlobalSentMessageCounter = _messageCounter;
                 SentMessageTimestamps[_messageCounter] = DateTime.UtcNow;
 
-                await _udpClient.SendAsync(bytesToSend, targetEndPoint);
+                await client.SendAsync(bytesToSend, targetEndPoint);
                 LogMessage?.Invoke($"Discovery message sent with Seq={_messageCounter}");
                 _messageCounter++;
                 if (_messageCounter > 65535) _messageCounter = 1;
@@ -92,9 +118,14 @@ namespace UdpUnicast
             }
         }
 
+        /// <summary>
+        /// 주기적 메시지 전송을 시작합니다.
+        /// </summary>
         public void StartPeriodicSend(IPEndPoint targetEndPoint, bool enableBroadcast, int interval, int dummySize, int sendLimit, bool isContinuous)
         {
-            if (_udpClient == null) return;
+            UdpClient? client;
+            lock (_udpLock) { client = _udpClient; }
+            if (client == null) return;
 
             _messageCounter = 0;
             _periodicSendCount = 0;
@@ -121,9 +152,9 @@ namespace UdpUnicast
 
                         LastGlobalSentMessageCounter = _messageCounter;
                         SentMessageTimestamps[_messageCounter] = DateTime.UtcNow;
-                        
-                        _udpClient.EnableBroadcast = enableBroadcast;
-                        await _udpClient.SendAsync(bytesToSend, targetEndPoint);
+
+                        client.EnableBroadcast = enableBroadcast;
+                        await client.SendAsync(bytesToSend, targetEndPoint);
                         LogMessage?.Invoke($"Sent: <FTEST,{_messageCounter},...>");
                         _messageCounter++;
                         _periodicSendCount++;
@@ -141,6 +172,9 @@ namespace UdpUnicast
             PeriodicSendStatusChanged?.Invoke("Start");
         }
 
+        /// <summary>
+        /// 주기적 전송을 중지합니다.
+        /// </summary>
         public void StopPeriodicSend()
         {
             _periodicSendCts?.Cancel();
@@ -148,9 +182,19 @@ namespace UdpUnicast
             PeriodicSendStatusChanged?.Invoke("Stop");
         }
 
+        /// <summary>
+        /// 리소스 해제 및 이벤트 해제
+        /// </summary>
         public void Dispose()
         {
+            if (_disposed) return;
             StopListener();
+            LogMessage = null;
+            ListenerStarted = null;
+            ListenerStopped = null;
+            MessageReceived = null;
+            PeriodicSendStatusChanged = null;
+            _disposed = true;
         }
     }
 }

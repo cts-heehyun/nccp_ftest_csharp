@@ -13,7 +13,6 @@ public partial class MainForm : Form
 
     private readonly ConcurrentDictionary<string, ListViewItem> macListViewItems = new();
     private readonly ConcurrentDictionary<string, bool> respondedMacsInCycle = new();
-    private readonly ConcurrentDictionary<string, int> macMismatchCounts = new();
     private readonly System.Windows.Forms.Timer _periodicCheckTimer;
 
     // 매직넘버/문자열 상수화
@@ -21,7 +20,9 @@ public partial class MainForm : Form
     private const string ResponseTimeDefault = "N/A";
     private const string TimeoutText = "Timeout";
 
-    // UI 스레드 안전 호출 유틸
+    /// <summary>
+    /// UI 스레드 안전 호출 유틸
+    /// </summary>
     private void InvokeIfRequired(Control control, Action action)
     {
         if (control.InvokeRequired) control.Invoke(action);
@@ -38,11 +39,16 @@ public partial class MainForm : Form
         _udpManager.MessageReceived += UdpManager_MessageReceived;
         _udpManager.PeriodicSendStatusChanged += UdpManager_PeriodicSendStatusChanged;
 
-        _periodicCheckTimer = new System.Windows.Forms.Timer();
-        _periodicCheckTimer.Interval = 1000; // 1초마다 체크
+        _periodicCheckTimer = new System.Windows.Forms.Timer
+        {
+            Interval = 1000 // 1초마다 체크
+        };
         _periodicCheckTimer.Tick += PeriodicCheckTimer_Tick;
     }
 
+    /// <summary>
+    /// 폼 로드시 네트워크 인터페이스 목록을 UI에 바인딩
+    /// </summary>
     private void MainForm_Load(object sender, EventArgs e)
     {
         cmbBindIp.Items.Add("Any IP (0.0.0.0)");
@@ -56,6 +62,9 @@ public partial class MainForm : Form
         SetPeriodicSendUIState(isSending: false);
     }
 
+    /// <summary>
+    /// 리스너 시작/중지 버튼 클릭 이벤트
+    /// </summary>
     private void btnStartStopListen_Click(object sender, EventArgs e)
     {
         if (_isListening)
@@ -134,6 +143,9 @@ public partial class MainForm : Form
         }
     }
 
+    /// <summary>
+    /// MAC 주소별 장치 정보를 리스트에 추가 또는 갱신
+    /// </summary>
     private void AddOrUpdateMac(string mac, string ipAddress)
     {
         if (macListViewItems.TryGetValue(mac, out var existingItem))
@@ -169,6 +181,9 @@ public partial class MainForm : Form
         });
     }
 
+    /// <summary>
+    /// 시퀀스 불일치 카운트 증가
+    /// </summary>
     private void UpdateMismatchCount(string mac)
     {
         if (macListViewItems.TryGetValue(mac, out var item))
@@ -184,6 +199,9 @@ public partial class MainForm : Form
         }
     }
 
+    /// <summary>
+    /// 장치 응답 시간 갱신
+    /// </summary>
     private void UpdateDeviceResponseTime(string mac, double rtt)
     {
         if (macListViewItems.TryGetValue(mac, out var item))
@@ -193,6 +211,9 @@ public partial class MainForm : Form
         }
     }
 
+    /// <summary>
+    /// 전송 버튼 클릭 이벤트 (단일/주기 전송)
+    /// </summary>
     private async void btnSend_Click(object sender, EventArgs e)
     {
         if (chkPeriodicSend.Checked)
@@ -204,18 +225,7 @@ public partial class MainForm : Form
             else
             {
                 if (!ValidateAndGetTarget(out IPEndPoint? targetEndPoint, isPeriodic: true)) return;
-                
-                // Reset UI
-                InvokeIfRequired(lvMacStatus, () =>
-                {
-                    foreach (ListViewItem item in lvMacStatus.Items)
-                    {
-                        item.SubItems[2].Text = ErrorCountDefault;
-                        item.SubItems[4].Text = ErrorCountDefault;
-                    }
-                });
-                macMismatchCounts.Clear();
-
+                ResetDeviceErrorAndMismatch();
                 _udpManager.StartPeriodicSend(targetEndPoint!, chkEnableBroadcast.Checked, (int)numInterval.Value, (int)numDummySize.Value, (int)numSendCountLimit.Value, chkContinuousSend.Checked);
             }
         }
@@ -224,6 +234,21 @@ public partial class MainForm : Form
             if (!ValidateAndGetTarget(out IPEndPoint? targetEndPoint, isPeriodic: false)) return;
             await _udpManager.SendSingleMessageAsync(targetEndPoint!, chkEnableBroadcast.Checked, txtSendMessage.Text);
         }
+    }
+
+    /// <summary>
+    /// 장치 에러/불일치 카운트 초기화
+    /// </summary>
+    private void ResetDeviceErrorAndMismatch()
+    {
+        InvokeIfRequired(lvMacStatus, () =>
+        {
+            foreach (ListViewItem item in lvMacStatus.Items)
+            {
+                item.SubItems[2].Text = ErrorCountDefault;
+                item.SubItems[4].Text = ErrorCountDefault;
+            }
+        });
     }
     
     private void UdpManager_PeriodicSendStatusChanged(string status)
@@ -369,9 +394,12 @@ public partial class MainForm : Form
         });
     }
 
+    /// <summary>
+    /// 폼 종료 시 리소스 해제
+    /// </summary>
     private void MainForm_FormClosing(object sender, FormClosingEventArgs e)
     {
-        _udpManager.Dispose();
-        _periodicCheckTimer.Dispose();
+        try { _udpManager.Dispose(); } catch { }
+        try { _periodicCheckTimer.Dispose(); } catch { }
     }
 }
