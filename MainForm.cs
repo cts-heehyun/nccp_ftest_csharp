@@ -7,17 +7,14 @@ namespace UdpUnicast;
 
 public partial class MainForm : Form
 {
-    private UdpClient? udpClient;
-    private CancellationTokenSource? listenerCts;
-    private CancellationTokenSource? periodicSendCts;
-    private int messageCounter = 0;
-    private int periodicSendCount = 0;
-    private int lastGlobalSentMessageCounter = -1; // New field
+    private readonly UdpManager _udpManager;
+    private bool _isListening = false;
+    private bool _isPeriodicSending = false;
 
     private readonly ConcurrentDictionary<string, ListViewItem> macListViewItems = new();
     private readonly ConcurrentDictionary<string, bool> respondedMacsInCycle = new();
-    private readonly ConcurrentDictionary<int, DateTime> sentMessageTimestamps = new(); // Changed name and key type
     private readonly ConcurrentDictionary<string, int> macMismatchCounts = new();
+    private readonly System.Windows.Forms.Timer _periodicCheckTimer;
 
     // 매직넘버/문자열 상수화
     private const string ErrorCountDefault = "0";
@@ -34,6 +31,16 @@ public partial class MainForm : Form
     public MainForm()
     {
         InitializeComponent();
+        _udpManager = new UdpManager();
+        _udpManager.LogMessage += AppendLog;
+        _udpManager.ListenerStarted += UdpManager_ListenerStarted;
+        _udpManager.ListenerStopped += UdpManager_ListenerStopped;
+        _udpManager.MessageReceived += UdpManager_MessageReceived;
+        _udpManager.PeriodicSendStatusChanged += UdpManager_PeriodicSendStatusChanged;
+
+        _periodicCheckTimer = new System.Windows.Forms.Timer();
+        _periodicCheckTimer.Interval = 1000; // 1초마다 체크
+        _periodicCheckTimer.Tick += PeriodicCheckTimer_Tick;
     }
 
     private void MainForm_Load(object sender, EventArgs e)
@@ -46,96 +53,91 @@ public partial class MainForm : Form
         }
         cmbBindIp.SelectedIndex = 0;
         grpSend.Enabled = false;
-        chkPeriodicSend_CheckedChanged(this, EventArgs.Empty);
-        chkContinuousSend_CheckedChanged(this, EventArgs.Empty);
+        SetPeriodicSendUIState(isSending: false);
     }
 
     private void btnStartStopListen_Click(object sender, EventArgs e)
     {
-        if (udpClient == null)
+        if (_isListening)
         {
-            try
-            {
-                IPAddress selectedIp = cmbBindIp.SelectedIndex == 0 ? IPAddress.Any : IPAddress.Parse((string?)cmbBindIp.SelectedItem ?? "127.0.0.1");
-                udpClient = new UdpClient(new IPEndPoint(selectedIp, 0));
-                listenerCts = new CancellationTokenSource();
-                AppendLog($"Bound to {udpClient.Client.LocalEndPoint}");
-                Task.Run(() => ListenForMessages(listenerCts.Token));
-                btnStartStopListen.Text = "Stop";
-                cmbBindIp.Enabled = false;
-                grpSend.Enabled = true;
-            }
-            catch (Exception ex) { MessageBox.Show($"Listener start failed: {ex.Message}", "Error"); udpClient?.Dispose(); udpClient = null; }
+            _udpManager.StopListener();
         }
         else
         {
-            StopPeriodicSend();
-            listenerCts?.Cancel();
-            udpClient?.Close();
-            udpClient = null;
+            IPAddress selectedIp = cmbBindIp.SelectedIndex == 0 ? IPAddress.Any : IPAddress.Parse((string?)cmbBindIp.SelectedItem ?? "127.0.0.1");
+            _udpManager.StartListener(selectedIp);
+        }
+    }
+
+    private void UdpManager_ListenerStarted(IPEndPoint localEndPoint)
+    {
+        InvokeIfRequired(this, () =>
+        {
+            AppendLog($"Bound to {localEndPoint}");
+            btnStartStopListen.Text = "Stop";
+            cmbBindIp.Enabled = false;
+            grpSend.Enabled = true;
+            _isListening = true;
+        });
+    }
+
+    private void UdpManager_ListenerStopped()
+    {
+        InvokeIfRequired(this, () =>
+        {
             AppendLog("Listener stopped.");
             btnStartStopListen.Text = "Start";
             cmbBindIp.Enabled = true;
             grpSend.Enabled = false;
-        }
+            _isListening = false;
+        });
     }
 
-    // 비동기로 메시지 수신 및 처리
-    private async Task ListenForMessages(CancellationToken token)
+    private void UdpManager_MessageReceived(byte[] buffer, IPEndPoint remoteEP)
     {
-        while (!token.IsCancellationRequested)
+        var rawMessage = Encoding.UTF8.GetString(buffer);
+
+        const string ResponsePrefix = "[FTEST,0,";
+        if (rawMessage.StartsWith(ResponsePrefix) && rawMessage.EndsWith("]"))
         {
-            try
+            string content = rawMessage[ResponsePrefix.Length..^1];
+            string[] parts = content.Split(new[] { ',' }, 5);
+            if (parts.Length == 5)
             {
-                var receivedResult = await udpClient!.ReceiveAsync(token);
-                var rawMessage = Encoding.UTF8.GetString(receivedResult.Buffer);
+                string mac = parts[0];
+                string echoedSeqStr = parts[1];
 
-                const string ResponsePrefix = "[FTEST,0,";
-                if (rawMessage.StartsWith(ResponsePrefix) && rawMessage.EndsWith("]"))
+                AddOrUpdateMac(mac, remoteEP.Address.ToString());
+
+                if (int.TryParse(echoedSeqStr, out int echoedSeq))
                 {
-                    string content = rawMessage[ResponsePrefix.Length..^1];
-                    string[] parts = content.Split(new[] { ',' }, 5);
-                    if (parts.Length == 5)
+                    if (echoedSeq != _udpManager.LastGlobalSentMessageCounter)
                     {
-                        string mac = parts[0];
-                        string echoedSeqStr = parts[1];
-                        
-                        AddOrUpdateMac(mac, receivedResult.RemoteEndPoint.Address.ToString());
+                        UpdateMismatchCount(mac);
+                    }
+                    else
+                    {
+                        respondedMacsInCycle.TryAdd(mac, true);
+                    }
 
-                        if (int.TryParse(echoedSeqStr, out int echoedSeq))
-                        {
-                            // Sequence Number Mismatch Check
-                            if (echoedSeq != lastGlobalSentMessageCounter)
-                            {
-                                UpdateMismatchCount(mac);
-                            }
-                            else
-                            {
-                                respondedMacsInCycle.TryAdd(mac, true); // Only add if sequence matches
-                            }
-
-                            // Update RTT
-                            if (sentMessageTimestamps.TryGetValue(echoedSeq, out DateTime sendTime))
-                            {
-                                var rtt = (DateTime.UtcNow - sendTime).TotalMilliseconds;
-                                UpdateDeviceResponseTime(mac, rtt);
-                            }
-                        }
+                    if (_udpManager.SentMessageTimestamps.TryGetValue(echoedSeq, out DateTime sendTime))
+                    {
+                        var rtt = (DateTime.UtcNow - sendTime).TotalMilliseconds;
+                        UpdateDeviceResponseTime(mac, rtt);
                     }
                 }
-                else { AppendLog($"Received from {receivedResult.RemoteEndPoint}: {rawMessage}"); }
             }
-            catch (OperationCanceledException) { break; }
-            catch (Exception ex) { AppendLog($"Listen error: {ex.Message}"); }
+        }
+        else
+        {
+            AppendLog($"Received from {remoteEP}: {rawMessage}");
         }
     }
 
-    // MAC 주소와 IP를 리스트뷰에 추가하거나, 이미 있으면 IP만 갱신
     private void AddOrUpdateMac(string mac, string ipAddress)
     {
         if (macListViewItems.TryGetValue(mac, out var existingItem))
         {
-            // IP 주소가 변경된 경우만 UI 갱신
             if (existingItem.SubItems[1].Text != ipAddress)
             {
                 if (existingItem.ListView != null)
@@ -144,15 +146,14 @@ public partial class MainForm : Form
             return;
         }
 
-        // 새 MAC이면 리스트뷰에 추가
         InvokeIfRequired(lvMacStatus, () =>
         {
             if (macListViewItems.ContainsKey(mac)) return;
             var item = new ListViewItem(mac) { Checked = true };
             item.SubItems.Add(ipAddress);
-            item.SubItems.Add(ErrorCountDefault); // Error Count
-            item.SubItems.Add(ResponseTimeDefault); // Response Time
-            item.SubItems.Add(ErrorCountDefault); // Mismatch Count
+            item.SubItems.Add(ErrorCountDefault);
+            item.SubItems.Add(ResponseTimeDefault);
+            item.SubItems.Add(ErrorCountDefault);
             lvMacStatus.Items.Add(item);
             macListViewItems.TryAdd(mac, item);
             AppendLog($"New device discovered: {mac} at {ipAddress}");
@@ -192,99 +193,69 @@ public partial class MainForm : Form
         }
     }
 
-    private void btnSend_Click(object sender, EventArgs e)
+    private async void btnSend_Click(object sender, EventArgs e)
     {
         if (chkPeriodicSend.Checked)
         {
-            if (periodicSendCts == null) StartPeriodicSend();
-            else StopPeriodicSend();
-        }
-        else { SendSingleMessage(); }
-    }
-
-    private async void SendSingleMessage()
-    {
-        if (!ValidateAndGetTarget(out IPEndPoint? targetEndPoint, isPeriodic: false)) return;
-        try
-        {
-            var message = $"<FTEST,{messageCounter},{txtSendMessage.Text}>";
-            byte[] bytesToSend = Encoding.UTF8.GetBytes(message);
-            
-            lastGlobalSentMessageCounter = messageCounter; // Store last sent global message counter
-            sentMessageTimestamps[messageCounter] = DateTime.UtcNow; // Store timestamp for RTT
-
-            await udpClient!.SendAsync(bytesToSend, targetEndPoint!);
-            AppendLog($"Discovery message sent with Seq={messageCounter}");
-            messageCounter++;
-            if (messageCounter > 65535) messageCounter = 1;
-        }
-        catch (Exception ex) { MessageBox.Show($"Error sending: {ex.Message}", "Error"); }
-    }
-
-    private void StartPeriodicSend()
-    {
-        if (!ValidateAndGetTarget(out IPEndPoint? targetEndPoint, isPeriodic: true)) return;
-        messageCounter = 0;
-        periodicSendCount = 0;
-        var localCts = new CancellationTokenSource();
-        this.periodicSendCts = localCts;
-        var interval = (int)numInterval.Value;
-        var dummySize = (int)numDummySize.Value;
-        var sendLimit = (int)numSendCountLimit.Value;
-
-        // Reset error counters in ListView
-        InvokeIfRequired(lvMacStatus, () =>
-        {
-            foreach (ListViewItem item in lvMacStatus.Items)
+            if (_isPeriodicSending)
             {
-                item.SubItems[2].Text = ErrorCountDefault; // Error Count
-                item.SubItems[4].Text = ErrorCountDefault; // Mismatch Count
+                _udpManager.StopPeriodicSend();
             }
-        });
-        macMismatchCounts.Clear();
-
-        Task.Run(async () =>
-        {
-            using var timer = new PeriodicTimer(TimeSpan.FromMilliseconds(interval));
-            try
+            else
             {
-                while (await timer.WaitForNextTickAsync(localCts.Token))
+                if (!ValidateAndGetTarget(out IPEndPoint? targetEndPoint, isPeriodic: true)) return;
+                
+                // Reset UI
+                InvokeIfRequired(lvMacStatus, () =>
                 {
-                    if (!chkContinuousSend.Checked && periodicSendCount >= sendLimit)
+                    foreach (ListViewItem item in lvMacStatus.Items)
                     {
-                        AppendLog($"Periodic send limit ({sendLimit}) reached. Stopping.");
-                        InvokeIfRequired(this, StopPeriodicSend);
-                        break;
+                        item.SubItems[2].Text = ErrorCountDefault;
+                        item.SubItems[4].Text = ErrorCountDefault;
                     }
+                });
+                macMismatchCounts.Clear();
 
-                    CleanupOldTimestamps();
-                    CheckForMissedResponses();
-                    var dummyData = new string('X', dummySize);
-                    var message = $"<FTEST,{messageCounter},{dummyData}>";
-                    byte[] bytesToSend = Encoding.UTF8.GetBytes(message);
-                    
-                    lastGlobalSentMessageCounter = messageCounter;
-                    sentMessageTimestamps[messageCounter] = DateTime.UtcNow;
-
-                    await udpClient!.SendAsync(bytesToSend, targetEndPoint!);
-                    AppendLog($"Sent: <FTEST,{messageCounter},...>");
-                    messageCounter++;
-                    periodicSendCount++;
-                    if (messageCounter > 65535) messageCounter = 1;
-                }
+                _udpManager.StartPeriodicSend(targetEndPoint!, chkEnableBroadcast.Checked, (int)numInterval.Value, (int)numDummySize.Value, (int)numSendCountLimit.Value, chkContinuousSend.Checked);
             }
-            catch (OperationCanceledException) { /* 정상 */ }
-            catch (Exception ex) { AppendLog($"Periodic send error: {ex.Message}"); }
+        }
+        else
+        {
+            if (!ValidateAndGetTarget(out IPEndPoint? targetEndPoint, isPeriodic: false)) return;
+            await _udpManager.SendSingleMessageAsync(targetEndPoint!, chkEnableBroadcast.Checked, txtSendMessage.Text);
+        }
+    }
+    
+    private void UdpManager_PeriodicSendStatusChanged(string status)
+    {
+        InvokeIfRequired(this, () =>
+        {
+            if (status == "Start")
+            {
+                _isPeriodicSending = true;
+                SetPeriodicSendUIState(isSending: true);
+                _periodicCheckTimer.Start();
+            }
+            else // Stop or Limit Reached
+            {
+                _isPeriodicSending = false;
+                SetPeriodicSendUIState(isSending: false);
+                _periodicCheckTimer.Stop();
+            }
         });
-        btnSend.Text = "Stop";
-        SetPeriodicSendUIState(isSending: true);
     }
 
-    // 체크된 MAC 중 응답이 없는 경우 에러 카운트 증가 및 타임아웃 표시
+    private void PeriodicCheckTimer_Tick(object? sender, EventArgs e)
+    {
+        CleanupOldTimestamps();
+        CheckForMissedResponses();
+    }
+
     private void CheckForMissedResponses()
     {
         List<ListViewItem> checkedItems = new List<ListViewItem>();
         InvokeIfRequired(lvMacStatus, () => checkedItems = lvMacStatus.CheckedItems.Cast<ListViewItem>().ToList());
+        
         foreach (var item in checkedItems)
         {
             string mac = item.Text;
@@ -302,56 +273,61 @@ public partial class MainForm : Form
         respondedMacsInCycle.Clear();
     }
 
-    // 오래된 타임스탬프 정리 (5초 이전 데이터 삭제)
     private void CleanupOldTimestamps()
     {
         var cutoff = DateTime.UtcNow.AddSeconds(-5);
-        foreach (var pair in sentMessageTimestamps)
+        foreach (var pair in _udpManager.SentMessageTimestamps)
         {
             if (pair.Value < cutoff)
             {
-                sentMessageTimestamps.TryRemove(pair.Key, out _);
+                _udpManager.SentMessageTimestamps.TryRemove(pair.Key, out _);
             }
         }
-    }
-
-    private void StopPeriodicSend()
-    {
-        periodicSendCts?.Cancel();
-        periodicSendCts = null;
-        btnSend.Text = "Start";
-        SetPeriodicSendUIState(isSending: false);
     }
 
     private bool ValidateAndGetTarget(out IPEndPoint? targetEndPoint, bool isPeriodic)
     {
         targetEndPoint = null;
-        if (udpClient == null) return false;
+        if (!_isListening) return false;
+
         IPAddress? targetIp;
         if (chkEnableBroadcast.Checked)
         {
             targetIp = IPAddress.Broadcast;
-            udpClient.EnableBroadcast = true;
         }
         else
         {
-            if (!IPAddress.TryParse(txtIpAddress.Text ?? string.Empty, out targetIp) || targetIp == null) { MessageBox.Show("Invalid IP.", "Warning"); return false; }
-            udpClient.EnableBroadcast = false;
+            if (!IPAddress.TryParse(txtIpAddress.Text ?? string.Empty, out targetIp) || targetIp == null)
+            {
+                MessageBox.Show("Invalid IP.", "Warning");
+                return false;
+            }
         }
-        if (!int.TryParse(txtPort.Text, out int targetPort) || targetPort < 1 || targetPort > 65535) { MessageBox.Show("Invalid Port.", "Warning"); return false; }
-        if (!isPeriodic && string.IsNullOrWhiteSpace(txtSendMessage.Text)) { MessageBox.Show("Discovery message is empty.", "Warning"); return false; }
+
+        if (!int.TryParse(txtPort.Text, out int targetPort) || targetPort < 1 || targetPort > 65535)
+        {
+            MessageBox.Show("Invalid Port.", "Warning");
+            return false;
+        }
+
+        if (!isPeriodic && string.IsNullOrWhiteSpace(txtSendMessage.Text))
+        {
+            MessageBox.Show("Discovery message is empty.", "Warning");
+            return false;
+        }
+
         targetEndPoint = new IPEndPoint(targetIp, targetPort);
         return true;
     }
 
     private void chkPeriodicSend_CheckedChanged(object sender, EventArgs e)
     {
-        SetPeriodicSendUIState(isSending: false);
+        SetPeriodicSendUIState(isSending: _isPeriodicSending);
     }
 
     private void chkContinuousSend_CheckedChanged(object sender, EventArgs e)
     {
-        SetPeriodicSendUIState(isSending: false);
+        SetPeriodicSendUIState(isSending: _isPeriodicSending);
     }
 
     private void SetPeriodicSendUIState(bool isSending)
@@ -359,20 +335,25 @@ public partial class MainForm : Form
         bool isPeriodicChecked = chkPeriodicSend.Checked;
         bool isContinuousChecked = chkContinuousSend.Checked;
 
-        lblInterval.Enabled = isPeriodicChecked;
-        numInterval.Enabled = isPeriodicChecked && !isSending;
-        lblDummySize.Enabled = isPeriodicChecked;
-        numDummySize.Enabled = isPeriodicChecked && !isSending;
+        InvokeIfRequired(this, () =>
+        {
+            lblInterval.Enabled = isPeriodicChecked;
+            numInterval.Enabled = isPeriodicChecked && !isSending;
+            lblDummySize.Enabled = isPeriodicChecked;
+            numDummySize.Enabled = isPeriodicChecked && !isSending;
 
-        lblSendCountLimit.Enabled = isPeriodicChecked && !isContinuousChecked;
-        numSendCountLimit.Enabled = isPeriodicChecked && !isContinuousChecked && !isSending;
+            lblSendCountLimit.Enabled = isPeriodicChecked && !isContinuousChecked;
+            numSendCountLimit.Enabled = isPeriodicChecked && !isContinuousChecked && !isSending;
 
-        txtSendMessage.Enabled = !isPeriodicChecked;
-        lblSendMessage.Enabled = !isPeriodicChecked;
-        btnSend.Text = isPeriodicChecked ? (isSending ? "Stop" : "Start") : "Send";
+            txtSendMessage.Enabled = !isPeriodicChecked;
+            lblSendMessage.Enabled = !isPeriodicChecked;
+            btnSend.Text = isPeriodicChecked ? (isSending ? "Stop" : "Start") : "Send";
 
-        chkContinuousSend.Enabled = isPeriodicChecked;
+            chkContinuousSend.Enabled = isPeriodicChecked;
+        });
     }
+
+
 
     private void chkEnableBroadcast_CheckedChanged(object sender, EventArgs e)
     {
@@ -390,8 +371,7 @@ public partial class MainForm : Form
 
     private void MainForm_FormClosing(object sender, FormClosingEventArgs e)
     {
-        StopPeriodicSend();
-        listenerCts?.Cancel();
-        udpClient?.Dispose();
+        _udpManager.Dispose();
+        _periodicCheckTimer.Dispose();
     }
 }
