@@ -150,9 +150,19 @@ public partial class MainForm : Form
                     if (echoedSeq != _udpManager.LastGlobalSentMessageCounter)
                     {
                         UpdateMismatchCount(mac);
+                        string ip = remoteEP.Address.ToString();
+                        AppendLog($"Delay Received from {ip}, recv {(echoedSeq).ToString()}, send {(_udpManager.LastGlobalSentMessageCounter).ToString()}");
                     }
                     else
                     {
+                        // Over Count 처리: 이미 응답된 MAC이면 over count 증가
+                        bool alreadyResponded = respondedMacsInCycle.ContainsKey(mac);
+                        if (alreadyResponded)
+                        {
+                            UpdateOverCount(mac);
+                            string ip = remoteEP.Address.ToString();
+                            AppendLog($"Over Received from {ip}");
+                        }
                         respondedMacsInCycle.TryAdd(mac, true);
                         if (_udpManager.SentMessageTimestamps.TryGetValue(echoedSeq, out DateTime sendTime))
                         {
@@ -273,6 +283,7 @@ public partial class MainForm : Form
             item.SubItems.Add(ErrorCountDefault);
             item.SubItems.Add(ResponseTimeDefault);
             item.SubItems.Add(ErrorCountDefault);
+            item.SubItems.Add(ErrorCountDefault);
             lvMacStatus.Items.Add(item);
             macListViewItems.TryAdd(mac, item);
             AppendLog($"New device discovered: {mac} at {ipAddress}");
@@ -288,9 +299,24 @@ public partial class MainForm : Form
         });
     }
 
-    /// <summary>
-    /// 시퀀스 불일치 카운트 증가
-    /// </summary>
+    private void UpdateOverCount(string mac)
+    {
+        if (macListViewItems.TryGetValue(mac, out var item))
+        {
+            InvokeIfRequired(item.ListView!, () =>
+            {
+                if (item.SubItems.Count > 5)
+                {
+                    int currentOverCount = int.Parse(item.SubItems[5].Text);
+                    item.SubItems[5].Text = (currentOverCount + 1).ToString();
+                }
+            });
+        }
+    }
+
+        /// <summary>
+        /// 시퀀스 불일치 카운트 증가
+        /// </summary>
     private void UpdateMismatchCount(string mac)
     {
         if (macListViewItems.TryGetValue(mac, out var item))
@@ -361,7 +387,6 @@ public partial class MainForm : Form
         formsPlot.Refresh();
     }
 
-    /// <summary>
     /// 장치 에러/불일치 카운트 초기화
     /// </summary>
     private void ResetDeviceErrorAndMismatch()
@@ -372,6 +397,10 @@ public partial class MainForm : Form
             {
                 item.SubItems[2].Text = ErrorCountDefault;
                 item.SubItems[4].Text = ErrorCountDefault;
+                if (item.SubItems.Count > 5)
+                {
+                    item.SubItems[5].Text = ErrorCountDefault;
+                }
             }
         });
     }
@@ -466,6 +495,7 @@ public partial class MainForm : Form
                         item.SubItems[2].Text = (currentErrors + 1).ToString();
                         item.SubItems[3].Text = TimeoutText;
                     });
+                AppendLog($"Don't Received from {item.SubItems[1].Text}, count {item.SubItems[2].Text}");
             }
         }
         respondedMacsInCycle.Clear();

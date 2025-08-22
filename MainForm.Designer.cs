@@ -46,6 +46,7 @@ namespace UdpUnicast
             colErrorCount = new ColumnHeader();
             colResponseTime = new ColumnHeader();
             colMismatchCount = new ColumnHeader();
+            colOverCount = new ColumnHeader();
             grpLog = new GroupBox();
             txtLog = new TextBox();
             tabControl = new TabControl();
@@ -300,7 +301,7 @@ namespace UdpUnicast
             // lvMacStatus
             // 
             lvMacStatus.CheckBoxes = true;
-            lvMacStatus.Columns.AddRange(new ColumnHeader[] { colMacAddress, colIpAddress, colErrorCount, colResponseTime, colMismatchCount });
+            lvMacStatus.Columns.AddRange(new ColumnHeader[] { colMacAddress, colIpAddress, colErrorCount, colResponseTime, colMismatchCount, colOverCount });
             lvMacStatus.Dock = DockStyle.Fill;
             lvMacStatus.Location = new Point(3, 3);
             lvMacStatus.Name = "lvMacStatus";
@@ -333,6 +334,11 @@ namespace UdpUnicast
             // 
             colMismatchCount.Text = "Mismatch Count";
             colMismatchCount.Width = 150;
+            // 
+            // colOverCount
+            // 
+            colOverCount.Text = "Over Count";
+            colOverCount.Width = 100;
             // 
             // grpLog
             // 
@@ -467,8 +473,9 @@ namespace UdpUnicast
         private System.Windows.Forms.ColumnHeader colMacAddress;
         private System.Windows.Forms.ColumnHeader colIpAddress;
         private System.Windows.Forms.ColumnHeader colErrorCount;
-        private System.Windows.Forms.ColumnHeader colResponseTime;
+                private System.Windows.Forms.ColumnHeader colResponseTime;
         private System.Windows.Forms.ColumnHeader colMismatchCount;
+        private System.Windows.Forms.ColumnHeader colOverCount;
         private System.Windows.Forms.Label lblDeviceCount;
         private System.Windows.Forms.TabControl tabControl;
     private System.Windows.Forms.TabPage tabPageMacList;
