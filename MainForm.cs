@@ -433,14 +433,15 @@ public partial class MainForm : Form
             try
             {
                 using var errWriter = new StreamWriter(errFile, false, Encoding.UTF8);
-                errWriter.WriteLine("mac,ip,errorCount,mismatchCount");
+                errWriter.WriteLine("mac,ip,errorCount,mismatchCount,OverCount");
                 foreach (var item in macListViewItems.Values)
                 {
                     var mac = item.Text;
                     var ip = item.SubItems[1].Text;
                     var err = item.SubItems[2].Text;
                     var mismatch = item.SubItems[4].Text;
-                    errWriter.WriteLine($"{mac},{ip},{err},{mismatch}");
+                    var over = item.SubItems[5].Text;
+                    errWriter.WriteLine($"{mac},{ip},{err},{mismatch},{over}");
                 }
             }
             catch (Exception ex)

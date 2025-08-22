@@ -53,7 +53,7 @@ namespace UdpUnicast
             tabPageMacList = new TabPage();
             tabPageLog = new TabPage();
             tabPageGraph = new TabPage();
-            formsPlot = new ScottPlot.WinForms.FormsPlot();
+            formsPlot = new FormsPlot();
             grpSettings.SuspendLayout();
             grpSend.SuspendLayout();
             ((System.ComponentModel.ISupportInitialize)numDummySize).BeginInit();
@@ -63,6 +63,7 @@ namespace UdpUnicast
             tabControl.SuspendLayout();
             tabPageMacList.SuspendLayout();
             tabPageLog.SuspendLayout();
+            tabPageGraph.SuspendLayout();
             SuspendLayout();
             // 
             // lblIpAddress
@@ -396,7 +397,7 @@ namespace UdpUnicast
             tabPageLog.TabIndex = 1;
             tabPageLog.Text = "Log";
             tabPageLog.UseVisualStyleBackColor = true;
-
+            // 
             // tabPageGraph
             // 
             tabPageGraph.Controls.Add(formsPlot);
@@ -407,9 +408,10 @@ namespace UdpUnicast
             tabPageGraph.TabIndex = 2;
             tabPageGraph.Text = "Graph";
             tabPageGraph.UseVisualStyleBackColor = true;
-
+            // 
             // formsPlot
             // 
+            formsPlot.DisplayScale = 1F;
             formsPlot.Dock = DockStyle.Fill;
             formsPlot.Location = new Point(3, 3);
             formsPlot.Name = "formsPlot";
@@ -426,7 +428,7 @@ namespace UdpUnicast
             Controls.Add(grpSettings);
             MinimumSize = new Size(540, 630);
             Name = "MainForm";
-            Text = "UDP Broadcast/Unicast Tool";
+            Text = "UDP Broadcast/Unicast Tool 0.0.0.1";
             FormClosing += MainForm_FormClosing;
             Load += MainForm_Load;
             grpSettings.ResumeLayout(false);
@@ -441,6 +443,7 @@ namespace UdpUnicast
             tabControl.ResumeLayout(false);
             tabPageMacList.ResumeLayout(false);
             tabPageLog.ResumeLayout(false);
+            tabPageGraph.ResumeLayout(false);
             ResumeLayout(false);
         }
 
