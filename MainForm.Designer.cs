@@ -476,14 +476,14 @@ namespace UdpUnicast
         private System.Windows.Forms.ColumnHeader colMacAddress;
         private System.Windows.Forms.ColumnHeader colIpAddress;
         private System.Windows.Forms.ColumnHeader colErrorCount;
-                private System.Windows.Forms.ColumnHeader colResponseTime;
+        private System.Windows.Forms.ColumnHeader colResponseTime;
         private System.Windows.Forms.ColumnHeader colMismatchCount;
         private System.Windows.Forms.ColumnHeader colOverCount;
         private System.Windows.Forms.Label lblDeviceCount;
         private System.Windows.Forms.TabControl tabControl;
-    private System.Windows.Forms.TabPage tabPageMacList;
-    private System.Windows.Forms.TabPage tabPageLog;
-    private System.Windows.Forms.TabPage tabPageGraph;
-    private ScottPlot.WinForms.FormsPlot formsPlot;
+        private System.Windows.Forms.TabPage tabPageMacList;
+        private System.Windows.Forms.TabPage tabPageLog;
+        private System.Windows.Forms.TabPage tabPageGraph;
+        private ScottPlot.WinForms.FormsPlot formsPlot;
     }
 }
