@@ -39,7 +39,6 @@ namespace UdpUnicast
                 {
                     try { _logWriter.Flush(); _logWriter.Close(); } catch { }
                     _logWriter = null;
-                    CurrentLogFileName = null;
                 }
             }
         }
