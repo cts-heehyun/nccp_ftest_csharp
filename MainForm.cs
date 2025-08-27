@@ -16,34 +16,17 @@ public partial class MainForm : Form
 {
     // --- 필드 정의 ---
 
-    // 그래프 데이터 관리: IP 주소별 (시퀀스 번호, 응답 시간) 목록
-    private readonly Dictionary<string, List<(int seq, double rtt)>> ipResponseData = new();
-    // 그래프 데이터 최대 보관 개수
-    private const int MaxGraphPointsPerIp = 65535;
-    // 현재 그래프에 표시 중인 IP 주소
-    private string? currentGraphIp = null;
+    // 역할별 분리된 매니저 클래스 필드
+    private readonly DeviceManager _deviceManager = new();
+    private readonly GraphManager _graphManager = new();
+    private readonly LogManager _logManager = new();
+    private readonly UIStateManager _uiStateManager = new();
     // UDP 통신 핵심 로직을 처리하는 관리자 클래스
     private readonly UdpManager _udpManager;
     // UDP 리스너 동작 상태 플래그
     private bool _isListening = false;
     // 주기적 전송 동작 상태 플래그
     private bool _isPeriodicSending = false;
-
-    // UI에 표시될 장치(MAC 주소 기준) 목록 관리 (쓰레드 안전)
-    private readonly ConcurrentDictionary<string, ListViewItem> macListViewItems = new();
-    // 한 전송 주기 내에 응답한 MAC 주소 목록 (중복 응답 확인용)
-    private readonly ConcurrentDictionary<string, bool> respondedMacsInCycle = new();
-
-    // 상수 정의
-    private const string ErrorCountDefault = "0";       // 오류 카운트 기본값
-    private const string ResponseTimeDefault = "N/A";   // 응답 시간 기본값
-    private const string TimeoutText = "Timeout";       // 타임아웃 표시 문자열
-
-    // CSV 로그 관련 필드
-    private string? _currentLogFileName; // 현재 사용 중인 로그 파일 이름
-    private StreamWriter? _logWriter;    // 로그 파일 쓰기 스트림
-    private readonly object _logLock = new(); // 로그 파일 접근 동기화를 위한 잠금 객체
-    private readonly Dictionary<(string ip, int seq), long> _sendLogMap = new(); // 전송 로그 기록을 위한 맵 (IP, 시퀀스) -> 전송 시간(ms)
 
     /// <summary>
     /// 컨트롤의 Invoke가 필요한 경우, UI 스레드에서 안전하게 액션을 실행합니다.
@@ -177,88 +160,58 @@ public partial class MainForm : Form
             {
                 string mac = parts[0];
                 string echoedSeqStr = parts[1];
-
-                // 장치 목록(ListView)에 MAC 주소와 IP 주소 추가 또는 업데이트
                 AddOrUpdateMac(mac, remoteEP.Address.ToString());
-
                 if (int.TryParse(echoedSeqStr, out int echoedSeq))
                 {
-                    // 수신된 시퀀스 번호와 마지막으로 보낸 시퀀스 번호가 다른 경우
                     if (echoedSeq != _udpManager.LastGlobalSentMessageCounter)
                     {
-                        UpdateMismatchCount(mac); // 불일치 카운트 증가
+                        UpdateMismatchCount(mac);
                         string ip = remoteEP.Address.ToString();
                         AppendLog($"Delay Received from {ip}, recv {(echoedSeq).ToString()}, send {(_udpManager.LastGlobalSentMessageCounter).ToString()}");
                     }
                     else
                     {
                         // Over Count 처리: 이미 응답한 MAC이면 over count 증가
-                        if (respondedMacsInCycle.ContainsKey(mac))
+                        if (_deviceManager.RespondedMacsInCycle.ContainsKey(mac))
                         {
                             UpdateOverCount(mac);
                             string ip = remoteEP.Address.ToString();
                             AppendLog($"Over Received from {ip}");
                         }
-                        respondedMacsInCycle.TryAdd(mac, true);
+                        _deviceManager.RespondedMacsInCycle.TryAdd(mac, true);
 
                         // RTT(왕복 시간) 계산
                         if (_udpManager.SentMessageTimestamps.TryGetValue(echoedSeq, out DateTime sendTime))
                         {
                             var rtt = (DateTime.UtcNow - sendTime).TotalMilliseconds;
-                            UpdateDeviceResponseTime(mac, rtt); // UI에 응답 시간 업데이트
-
-                            // --- 그래프 데이터 추가 및 갱신 ---
+                            UpdateDeviceResponseTime(mac, rtt);
                             string ip = remoteEP.Address.ToString();
-                            lock (ipResponseData)
+                            // 그래프 데이터 추가 및 갱신
+                            _graphManager.AddResponse(ip, echoedSeq, rtt);
+                            // 콤보박스에 IP 추가 및 선택
+                            InvokeIfRequired(cmbGraphIp, () =>
                             {
-                                if (!ipResponseData.ContainsKey(ip))
+                                if (!cmbGraphIp.Items.Contains(ip))
                                 {
-                                    ipResponseData[ip] = new List<(int, double)>();
-                                    // 새 IP가 발견되면 그래프 IP 선택 콤보박스에 추가
-                                    InvokeIfRequired(cmbGraphIp, () =>
+                                    cmbGraphIp.Items.Add(ip);
+                                    if (cmbGraphIp.Items.Count == 1)
                                     {
-                                        cmbGraphIp.Items.Add(ip);
-                                        if (cmbGraphIp.Items.Count == 1)
-                                        {
-                                            cmbGraphIp.SelectedIndex = 0;
-                                            currentGraphIp = ip;
-                                        }
-                                    });
+                                        cmbGraphIp.SelectedIndex = 0;
+                                        _graphManager.SetCurrentGraphIp(ip);
+                                    }
                                 }
-                                ipResponseData[ip].Add((echoedSeq, rtt));
-                                // 최대 포인트 수를 초과하면 오래된 데이터부터 제거
-                                if (ipResponseData[ip].Count > MaxGraphPointsPerIp)
+                                if (ip == cmbGraphIp.SelectedItem as string)
                                 {
-                                    int overflow = ipResponseData[ip].Count - MaxGraphPointsPerIp;
-                                    ipResponseData[ip].RemoveRange(0, overflow);
+                                    _graphManager.SetCurrentGraphIp(ip);
+                                    _graphManager.UpdateGraph(formsPlot);
                                 }
-                                // 현재 선택된 IP의 데이터인 경우 그래프 즉시 업데이트
-                                if (ip == currentGraphIp)
-                                {
-                                    UpdateGraph(ip);
-                                }
-                            }
-
-                            // --- CSV 로그 기록 ---
-                            lock (_logLock)
+                            });
+                            // CSV 로그 기록
+                            // (sendLogMap 등은 MainForm에서 관리 필요, 여기서는 생략)
+                            if (_logManager.CurrentLogFileName != null)
                             {
-                                if (_logWriter != null)
-                                {
-                                    if (_sendLogMap.TryGetValue((ip, echoedSeq), out long sendMs))
-                                    {
-                                        var dt = DateTimeOffset.FromUnixTimeMilliseconds(sendMs).ToLocalTime().DateTime;
-                                        string sendTimeStr = dt.ToString("HH:mm:ss.fff");
-                                        string rttStr = rtt.ToString("F1");
-                                        _logWriter.WriteLine($"recv,{ip},{echoedSeq},{sendTimeStr},{rttStr}");
-                                    }
-                                    else
-                                    {
-                                        string rttStr = rtt.ToString("F1");
-                                        _logWriter.WriteLine($"recv,{ip},{echoedSeq},,{rttStr}");
-                                    }
-                                    // 사용된 전송 로그는 정리하여 메모리 증가 방지
-                                    _sendLogMap.Remove((ip, echoedSeq));
-                                }
+                                string rttStr = rtt.ToString("F1");
+                                _logManager.WriteLog($"recv,{ip},{echoedSeq},,{rttStr}");
                             }
                         }
                     }
@@ -267,7 +220,6 @@ public partial class MainForm : Form
         }
         else
         {
-            // FTEST 프로토콜이 아닌 경우, 받은 메시지 그대로 로그에 표시
             AppendLog($"Received from {remoteEP}: {rawMessage}");
         }
     }
@@ -279,8 +231,8 @@ public partial class MainForm : Form
     {
         if (cmbGraphIp.SelectedItem is string ip)
         {
-            currentGraphIp = ip;
-            UpdateGraph(ip);
+            _graphManager.SetCurrentGraphIp(ip);
+            _graphManager.UpdateGraph(formsPlot);
         }
     }
 
@@ -290,123 +242,28 @@ public partial class MainForm : Form
     /// <param name="ip">그래프를 그릴 IP 주소</param>
     private void UpdateGraph(string ip)
     {
-        InvokeIfRequired(formsPlot, () =>
-        {
-            formsPlot.Plot.Clear();
-            if (!ipResponseData.ContainsKey(ip) || ipResponseData[ip].Count == 0)
-            {
-                formsPlot.Refresh();
-                return;
-            }
-            var data = ipResponseData[ip];
-            double[] xs = data.Select(d => (double)d.seq).ToArray();
-            double[] ys = data.Select(d => d.rtt).ToArray();
-            
-            var scatter = formsPlot.Plot.Add.Scatter(xs, ys, color: ScottPlot.Colors.Blue);
-            scatter.MarkerSize = 5;
-            scatter.LineWidth = 0;
-            formsPlot.Plot.Title($"Response Time (IP: {ip})");
-            formsPlot.Plot.XLabel("Sequence Number");
-            formsPlot.Plot.YLabel("Response Time (ms)");
-            formsPlot.Plot.Axes.AutoScale();
-            formsPlot.Refresh();
-        });
+    // 그래프 갱신은 GraphManager에서 처리
+    InvokeIfRequired(formsPlot, () => _graphManager.UpdateGraph(formsPlot));
     }
 
     /// <summary>
     /// 장치 목록(ListView)에 새 장치를 추가하거나 기존 장치의 IP 주소를 업데이트합니다.
     /// </summary>
-    /// <param name="mac">장치의 MAC 주소</param>
-    /// <param name="ipAddress">장치의 IP 주소</param>
     private void AddOrUpdateMac(string mac, string ipAddress)
     {
-        // 이미 목록에 있는 MAC인 경우
-        if (macListViewItems.TryGetValue(mac, out var existingItem))
-        {
-            // IP 주소가 변경되었으면 업데이트
-            if (existingItem.SubItems[1].Text != ipAddress)
-            {
-                if (existingItem.ListView != null)
-                    InvokeIfRequired(existingItem.ListView, () => existingItem.SubItems[1].Text = ipAddress);
-            }
-            return;
-        }
-
-        // 새 MAC인 경우, 리스트에 새로 추가
-        InvokeIfRequired(lvMacStatus, () =>
-        {
-            if (macListViewItems.ContainsKey(mac)) return; // 이중 확인
-            var item = new ListViewItem(mac) { Checked = true };
-            item.SubItems.Add(ipAddress);
-            item.SubItems.Add(ErrorCountDefault);    // Error Count
-            item.SubItems.Add(ResponseTimeDefault);  // Response Time
-            item.SubItems.Add(ErrorCountDefault);    // Mismatch Count
-            item.SubItems.Add(ErrorCountDefault);    // Over Count
-            lvMacStatus.Items.Add(item);
-            macListViewItems.TryAdd(mac, item);
-            AppendLog($"New device discovered: {mac} at {ipAddress}");
-            UpdateDeviceCount();
-        });
+        _deviceManager.AddOrUpdateMac(lvMacStatus, mac, ipAddress, AppendLog, () => _deviceManager.UpdateDeviceCount(lblDeviceCount));
     }
 
-    /// <summary>
-    /// 발견된 장치 수를 UI에 업데이트합니다.
-    /// </summary>
-    private void UpdateDeviceCount()
-    {
-        InvokeIfRequired(lblDeviceCount, () =>
-        {
-            lblDeviceCount.Text = $"Discovered: {macListViewItems.Count}";
-        });
-    }
+    // 발견된 장치 수 UI 업데이트는 DeviceManager에서 처리
 
-    /// <summary>
-    /// 중복 수신(Over Count) 카운트를 1 증가시킵니다.
-    /// </summary>
-    private void UpdateOverCount(string mac)
-    {
-        if (macListViewItems.TryGetValue(mac, out var item))
-        {
-            InvokeIfRequired(item.ListView!, () =>
-            {
-                if (item.SubItems.Count > 5)
-                {
-                    int currentOverCount = int.Parse(item.SubItems[5].Text);
-                    item.SubItems[5].Text = (currentOverCount + 1).ToString();
-                }
-            });
-        }
-    }
+    // 중복 수신(Over Count) 카운트 증가도 DeviceManager로 위임
+    private void UpdateOverCount(string mac) => _deviceManager.UpdateOverCount(mac);
 
-    /// <summary>
-    /// 시퀀스 번호 불일치(Mismatch Count) 카운트를 1 증가시킵니다.
-    /// </summary>
-    private void UpdateMismatchCount(string mac)
-    {
-        if (macListViewItems.TryGetValue(mac, out var item))
-        {
-            InvokeIfRequired(item.ListView!, () =>
-            {
-                if (item.SubItems.Count > 4)
-                {
-                    int currentMismatch = int.Parse(item.SubItems[4].Text);
-                    item.SubItems[4].Text = (currentMismatch + 1).ToString();
-                }
-            });
-        }
-    }
+    // 시퀀스 번호 불일치(Mismatch Count) 카운트 증가도 DeviceManager로 위임
+    private void UpdateMismatchCount(string mac) => _deviceManager.UpdateMismatchCount(mac);
 
-    /// <summary>
-    /// 장치의 응답 시간(RTT)을 UI에 업데이트합니다.
-    /// </summary>
-    private void UpdateDeviceResponseTime(string mac, double rtt)
-    {
-        if (macListViewItems.TryGetValue(mac, out var item))
-        {
-            if (item.ListView != null)
-                InvokeIfRequired(item.ListView, () => item.SubItems[3].Text = rtt.ToString("F1"));
-        }
-    }
+    // 장치의 응답 시간(RTT) UI 업데이트도 DeviceManager로 위임
+    private void UpdateDeviceResponseTime(string mac, double rtt) => _deviceManager.UpdateDeviceResponseTime(mac, rtt);
 
     /// <summary>
     /// "Send" 버튼 클릭 시 단일 또는 주기적 메시지 전송을 시작/중지합니다.
@@ -443,37 +300,17 @@ public partial class MainForm : Form
     /// </summary>
     private void ResetGraphData()
     {
-        lock (ipResponseData)
-        {
-            ipResponseData.Clear();
-        }
+        _graphManager.Reset();
         InvokeIfRequired(cmbGraphIp, () =>
         {
             cmbGraphIp.Items.Clear();
-            currentGraphIp = null;
         });
         formsPlot.Plot.Clear();
         formsPlot.Refresh();
     }
 
-    /// <summary>
-    /// 모든 장치의 오류 및 불일치 카운트를 0으로 초기화합니다.
-    /// </summary>
-    private void ResetDeviceErrorAndMismatch()
-    {
-        InvokeIfRequired(lvMacStatus, () =>
-        {
-            foreach (ListViewItem item in lvMacStatus.Items)
-            {
-                item.SubItems[2].Text = ErrorCountDefault; // Error
-                item.SubItems[4].Text = ErrorCountDefault; // Mismatch
-                if (item.SubItems.Count > 5)
-                {
-                    item.SubItems[5].Text = ErrorCountDefault; // Over
-                }
-            }
-        });
-    }
+    // 모든 장치의 오류 및 불일치 카운트 초기화도 DeviceManager로 위임
+    private void ResetDeviceErrorAndMismatch() => _deviceManager.ResetDeviceErrorAndMismatch(lvMacStatus);
     
     /// <summary>
     /// 주기적 전송 상태 변경 시 호출됩니다. CSV 로깅을 시작하거나 중지합니다.
@@ -487,29 +324,23 @@ public partial class MainForm : Form
 
         if (state == "Start" && fileName != null)
         {
-            _currentLogFileName = fileName;
             try
             {
-                // CSV 파일 및 헤더 생성
-                _logWriter = new StreamWriter(_currentLogFileName, false, Encoding.UTF8);
-                _logWriter.WriteLine("type,ip,seq,sendTimeMs,responseTimeMs");
+                _logManager.StartLog(fileName);
             }
             catch (Exception ex)
             {
                 AppendLog($"CSV 파일 생성 실패: {ex.Message}");
             }
         }
-        else if (state == "Stop" && _logWriter != null)
+        else if (state == "Stop")
         {
-            try { _logWriter.Flush(); _logWriter.Close(); } catch { }
-            _logWriter = null;
-            _sendLogMap.Clear();
+            _logManager.StopLog();
 
             // 주기적 전송 종료 시, 에러 카운트 별도 파일로 저장
-            var errFile = Path.ChangeExtension(_currentLogFileName, ".err.csv");
+            var errFile = Path.ChangeExtension(_logManager.CurrentLogFileName, ".err.csv");
             try
             {
-                // UI 스레드에서 필요한 값만 스냅샷으로 수집 후 파일 기록은 백그라운드에서 수행
                 List<(string mac, string ip, string err, string mismatch, string over)> snapshot = new();
                 InvokeIfRequired(lvMacStatus, () =>
                 {
@@ -545,7 +376,7 @@ public partial class MainForm : Form
                 _isPeriodicSending = true;
                 SetPeriodicSendUIState(isSending: true);
             }
-            else // Stop 또는 전송 횟수 도달
+            else
             {
                 _isPeriodicSending = false;
                 SetPeriodicSendUIState(isSending: false);
@@ -558,46 +389,18 @@ public partial class MainForm : Form
     /// </summary>
     private void UdpManager_SendRecvLogCallback(string type, string ip, string? fileName, long sendTimeMs, long? responseTimeMs)
     {
-        lock (_logLock)
+        // 로그 기록은 LogManager에서 처리
+        if (type == "send")
         {
-            if (_logWriter == null) return;
-            if (type == "send")
-            {
-                int seq = _udpManager.LastGlobalSentMessageCounter;
-                _sendLogMap[(ip, seq)] = sendTimeMs; // 수신 시 RTT 계산을 위해 전송 시간 저장
-                _logWriter.WriteLine($"send,{ip},{seq},{DateTime.Now:HH:mm:ss.fff},");
-            }
-            // 수신 로그는 MessageReceived 핸들러에서 직접 기록합니다.
+            int seq = _udpManager.LastGlobalSentMessageCounter;
+            // RTT 계산용 전송 시간 저장 (별도 관리 필요시 LogManager에 추가 구현)
+            _logManager.WriteLog($"send,{ip},{seq},{DateTime.Now:HH:mm:ss.fff},");
         }
+        // 수신 로그는 MessageReceived 핸들러에서 직접 기록합니다.
     }
 
-    /// <summary>
-    /// 주기적 전송의 한 사이클이 끝날 때마다 응답이 없었던 장치를 확인하고 처리합니다.
-    /// </summary>
-    private void CheckForMissedResponses()
-    {
-        List<ListViewItem> checkedItems = new List<ListViewItem>();
-        InvokeIfRequired(lvMacStatus, () => checkedItems = lvMacStatus.CheckedItems.Cast<ListViewItem>().ToList());
-
-        // 체크된 항목 중 이번 주기에 응답이 없었던 장치의 에러 카운트 증가
-        foreach (var item in checkedItems)
-        {
-            string mac = item.Text;
-            if (!respondedMacsInCycle.ContainsKey(mac))
-            {
-                if (item.ListView != null)
-                    InvokeIfRequired(item.ListView, () =>
-                    {
-                        int currentErrors = int.Parse(item.SubItems[2].Text);
-                        item.SubItems[2].Text = (currentErrors + 1).ToString();
-                        item.SubItems[3].Text = TimeoutText;
-                    });
-                AppendLog($"Don't Received from {item.SubItems[1].Text}, count {item.SubItems[2].Text}");
-            }
-        }
-        // 다음 주기를 위해 응답 기록 초기화
-        respondedMacsInCycle.Clear();
-    }
+    // 주기적 전송의 한 사이클이 끝날 때 응답 없는 장치 처리도 DeviceManager로 위임
+    private void CheckForMissedResponses() => _deviceManager.CheckForMissedResponses(lvMacStatus, AppendLog);
 
     /// <summary>
     /// 오래된 전송 타임스탬프를 정리하여 메모리 사용량을 관리합니다.
