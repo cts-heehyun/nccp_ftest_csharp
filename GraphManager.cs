@@ -13,6 +13,8 @@ namespace UdpUnicast
         private string? currentGraphIp = null;
         private const int MaxGraphPointsPerIp = 65535;
 
+        public int Y_Max_limit { get; set; } = 200;
+
         public void AddResponse(string ip, int seq, double rtt)
         {
             lock (ipResponseData)
@@ -70,7 +72,8 @@ namespace UdpUnicast
                 formsPlot.Plot.Title($"Response Time (IP: {currentGraphIp})");
                 formsPlot.Plot.XLabel("Sequence Number");
                 formsPlot.Plot.YLabel("Response Time (ms)");
-                formsPlot.Plot.Axes.AutoScale();
+                //formsPlot.Plot.Axes.AutoScale();
+                formsPlot.Plot.Axes.SetLimits(0, ipResponseData[currentGraphIp].Count, 0, Y_Max_limit);
                 formsPlot.Refresh();
             }
         }

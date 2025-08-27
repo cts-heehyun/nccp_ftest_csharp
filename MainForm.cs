@@ -283,6 +283,7 @@ public partial class MainForm : Form
                 ResetDeviceErrorAndMismatch(); // 통계 초기화
                 ResetGraphData();              // 그래프 데이터 초기화
                 txtLog.Clear();
+                _graphManager.Y_Max_limit = (int)numInterval.Value;
                 _udpManager.StartPeriodicSend(targetEndPoint!, chkEnableBroadcast.Checked, (int)numInterval.Value, (int)numDummySize.Value, (int)numSendCountLimit.Value, chkContinuousSend.Checked);
             }
         }
