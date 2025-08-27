@@ -31,11 +31,11 @@ namespace UdpUnicast
         /// 주기적 전송 상태 변경 시 호출될 이벤트
         /// </summary>
         public event Action<string>? PeriodicSendStatusChanged;
-        
+
         /// <summary>
-        /// 송수신 로그 기록을 위한 콜백 (타입, 소스IP, 파일명, 송신시간(ms), 응답시간(ms))
+        /// 송수신 로그 기록을 위한 콜백 (타입, 소스IP, 파일명?, 송신시간(ms), 응답시간(ms))
         /// </summary>
-        public Action<string, string, string, long, long?>? SendRecvLogCallback;
+        public Action<string, string, string?, long, long?>? SendRecvLogCallback;
 
         /// <summary>
         /// 응답 없는 장치 확인을 위한 콜백
@@ -100,7 +100,10 @@ namespace UdpUnicast
                 StopPeriodicSend();
                 // 리스너 작업 취소
                 _listenerCts?.Cancel();
+                _listenerCts?.Dispose();
+                _listenerCts = null;
                 _udpClient?.Close();
+                _udpClient?.Dispose();
                 _udpClient = null;
                 // 리스너가 중지되었음을 알림
                 ListenerStopped?.Invoke();
@@ -149,18 +152,25 @@ namespace UdpUnicast
             {
                 client.EnableBroadcast = enableBroadcast;
                 // 프로토콜 형식에 맞춰 메시지 구성
-                var fullMessage = $"<FTEST,{_messageCounter},{message}>";
+                var fullMessage = $"<{message}>";
                 byte[] bytesToSend = Encoding.UTF8.GetBytes(fullMessage);
 
-                // RTT 계산을 위해 시퀀스 번호와 전송 시간 기록
-                LastGlobalSentMessageCounter = _messageCounter;
-                SentMessageTimestamps[_messageCounter] = DateTime.UtcNow;
+                const string SendPrefix = "<FTEST,";
+                if (fullMessage.StartsWith(SendPrefix) && fullMessage.EndsWith(">"))
+                {
+                    string content = fullMessage[SendPrefix.Length..^1];
+                    string[] parts = content.Split(new[] { ',' }, 5);
+
+                    // RTT 계산을 위해 시퀀스 번호와 전송 시간 기록
+                    _messageCounter = int.Parse(parts[0]);
+                    LastGlobalSentMessageCounter = _messageCounter;
+                    SentMessageTimestamps[_messageCounter] = DateTime.UtcNow;
+
+                    CheckForMissedResponses?.Invoke();
+                }
 
                 await client.SendAsync(bytesToSend, targetEndPoint);
-                LogMessage?.Invoke($"Discovery message sent with Seq={_messageCounter}");
-                
-                _messageCounter++;
-                if (_messageCounter > 65535) _messageCounter = 1; // 시퀀스 번호 순환
+                LogMessage?.Invoke($"{fullMessage}");
             }
             catch (Exception ex)
             {
@@ -186,6 +196,8 @@ namespace UdpUnicast
             string fileTimestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
             string logFileName = $"comm_{fileTimestamp}.csv";
             PeriodicSendStatusChanged?.Invoke($"Start|{logFileName}");
+
+            LogMessage?.Invoke($"Start");
 
             // 주기적 전송을 위한 백그라운드 작업 시작
             Task.Run(async () =>
@@ -235,8 +247,6 @@ namespace UdpUnicast
                     PeriodicSendStatusChanged?.Invoke($"Stop|{logFileName}");
                 }
             });
-
-            PeriodicSendStatusChanged?.Invoke("Start");
         }
 
         /// <summary>

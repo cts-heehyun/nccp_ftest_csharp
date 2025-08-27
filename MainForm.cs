@@ -18,6 +18,8 @@ public partial class MainForm : Form
 
     // 그래프 데이터 관리: IP 주소별 (시퀀스 번호, 응답 시간) 목록
     private readonly Dictionary<string, List<(int seq, double rtt)>> ipResponseData = new();
+    // 그래프 데이터 최대 보관 개수
+    private const int MaxGraphPointsPerIp = 65535;
     // 현재 그래프에 표시 중인 IP 주소
     private string? currentGraphIp = null;
     // UDP 통신 핵심 로직을 처리하는 관리자 클래스
@@ -224,6 +226,12 @@ public partial class MainForm : Form
                                     });
                                 }
                                 ipResponseData[ip].Add((echoedSeq, rtt));
+                                // 최대 포인트 수를 초과하면 오래된 데이터부터 제거
+                                if (ipResponseData[ip].Count > MaxGraphPointsPerIp)
+                                {
+                                    int overflow = ipResponseData[ip].Count - MaxGraphPointsPerIp;
+                                    ipResponseData[ip].RemoveRange(0, overflow);
+                                }
                                 // 현재 선택된 IP의 데이터인 경우 그래프 즉시 업데이트
                                 if (ip == currentGraphIp)
                                 {
@@ -248,6 +256,8 @@ public partial class MainForm : Form
                                         string rttStr = rtt.ToString("F1");
                                         _logWriter.WriteLine($"recv,{ip},{echoedSeq},,{rttStr}");
                                     }
+                                    // 사용된 전송 로그는 정리하여 메모리 증가 방지
+                                    _sendLogMap.Remove((ip, echoedSeq));
                                 }
                             }
                         }
@@ -415,6 +425,7 @@ public partial class MainForm : Form
                 if (!ValidateAndGetTarget(out IPEndPoint? targetEndPoint, isPeriodic: true)) return;
                 ResetDeviceErrorAndMismatch(); // 통계 초기화
                 ResetGraphData();              // 그래프 데이터 초기화
+                txtLog.Clear();
                 _udpManager.StartPeriodicSend(targetEndPoint!, chkEnableBroadcast.Checked, (int)numInterval.Value, (int)numDummySize.Value, (int)numSendCountLimit.Value, chkContinuousSend.Checked);
             }
         }
@@ -492,21 +503,32 @@ public partial class MainForm : Form
         {
             try { _logWriter.Flush(); _logWriter.Close(); } catch { }
             _logWriter = null;
-            
+            _sendLogMap.Clear();
+
             // 주기적 전송 종료 시, 에러 카운트 별도 파일로 저장
             var errFile = Path.ChangeExtension(_currentLogFileName, ".err.csv");
             try
             {
-                using var errWriter = new StreamWriter(errFile, false, Encoding.UTF8);
-                errWriter.WriteLine("mac,ip,errorCount,mismatchCount,OverCount");
-                foreach (var item in macListViewItems.Values)
+                // UI 스레드에서 필요한 값만 스냅샷으로 수집 후 파일 기록은 백그라운드에서 수행
+                List<(string mac, string ip, string err, string mismatch, string over)> snapshot = new();
+                InvokeIfRequired(lvMacStatus, () =>
                 {
-                    var mac = item.Text;
-                    var ip = item.SubItems[1].Text;
-                    var err = item.SubItems[2].Text;
-                    var mismatch = item.SubItems[4].Text;
-                    var over = item.SubItems[5].Text;
-                    errWriter.WriteLine($"{mac},{ip},{err},{mismatch},{over}");
+                    foreach (ListViewItem item in lvMacStatus.Items)
+                    {
+                        string mac = item.Text;
+                        string ip = item.SubItems[1].Text;
+                        string err = item.SubItems[2].Text;
+                        string mismatch = item.SubItems[4].Text;
+                        string over = item.SubItems[5].Text;
+                        snapshot.Add((mac, ip, err, mismatch, over));
+                    }
+                });
+
+                using var errWriter = new StreamWriter(errFile, false, Encoding.UTF8);
+                errWriter.WriteLine("mac,ip,errorCount,mismatchCount,overCount");
+                foreach (var row in snapshot)
+                {
+                    errWriter.WriteLine($"{row.mac},{row.ip},{row.err},{row.mismatch},{row.over}");
                 }
             }
             catch (Exception ex)

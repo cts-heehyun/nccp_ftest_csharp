@@ -117,7 +117,7 @@ namespace UdpUnicast
             txtSendMessage.Name = "txtSendMessage";
             txtSendMessage.Size = new Size(787, 50);
             txtSendMessage.TabIndex = 3;
-            txtSendMessage.Text = "0";
+            txtSendMessage.Text = "FTEST,0,0";
             // 
             // btnSend
             // 
@@ -428,7 +428,7 @@ namespace UdpUnicast
             Controls.Add(grpSettings);
             MinimumSize = new Size(540, 630);
             Name = "MainForm";
-            Text = "UDP Broadcast/Unicast Tool 0.0.0.1";
+            Text = "UDP Broadcast/Unicast Tool";
             FormClosing += MainForm_FormClosing;
             Load += MainForm_Load;
             grpSettings.ResumeLayout(false);
