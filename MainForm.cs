@@ -23,6 +23,8 @@ public partial class MainForm : Form
     private readonly UIStateManager _uiStateManager = new();
     // UDP 통신 핵심 로직을 처리하는 관리자 클래스
     private readonly UdpManager _udpManager;
+    // 주기적 전송 관련 컨트롤 DTO
+    private readonly PeriodicSendControls _periodicSendControls;
     // UDP 리스너 동작 상태 플래그
     private bool _isListening = false;
     // 주기적 전송 동작 상태 플래그
@@ -76,6 +78,21 @@ public partial class MainForm : Form
         formsPlot.Location = new System.Drawing.Point(10, 40);
         formsPlot.Size = new System.Drawing.Size(tabPageGraph.Width - 20, tabPageGraph.Height - 50);
         formsPlot.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
+
+        // 주기적 전송 관련 컨트롤 DTO 할당
+        _periodicSendControls = new PeriodicSendControls
+        {
+            LblInterval = lblInterval,
+            NumInterval = numInterval,
+            LblDummySize = lblDummySize,
+            NumDummySize = numDummySize,
+            LblSendCountLimit = lblSendCountLimit,
+            NumSendCountLimit = numSendCountLimit,
+            TxtSendMessage = txtSendMessage,
+            LblSendMessage = lblSendMessage,
+            BtnSend = btnSend,
+            ChkContinuousSend = chkContinuousSend
+        };
     }
 
     /// <summary>
@@ -92,20 +109,11 @@ public partial class MainForm : Form
         cmbBindIp.SelectedIndex = 0;
         grpSend.Enabled = false; // 리스너 시작 전에는 전송 그룹 비활성화
         _uiStateManager.SetPeriodicSendUIState(
-            this,                  // 폼 인스턴스
+            this,
             chkPeriodicSend.Checked,
             chkContinuousSend.Checked,
-            isSending: false,             // 현재 전송 중 여부
-            lblInterval,
-            numInterval,
-            lblDummySize,
-            numDummySize,
-            lblSendCountLimit,
-            numSendCountLimit,
-            txtSendMessage,
-            lblSendMessage,
-            btnSend,
-            chkContinuousSend
+            false,
+            _periodicSendControls
         );
     }
 
@@ -395,40 +403,22 @@ public partial class MainForm : Form
             {
                 _isPeriodicSending = true;
                 _uiStateManager.SetPeriodicSendUIState(
-                    this,                  // 폼 인스턴스
+                    this,
                     chkPeriodicSend.Checked,
                     chkContinuousSend.Checked,
-                    isSending: _isPeriodicSending,             // 현재 전송 중 여부
-                    lblInterval,
-                    numInterval,
-                    lblDummySize,
-                    numDummySize,
-                    lblSendCountLimit,
-                    numSendCountLimit,
-                    txtSendMessage,
-                    lblSendMessage,
-                    btnSend,
-                    chkContinuousSend
+                    _isPeriodicSending,
+                    _periodicSendControls
                 );
             }
             else
             {
                 _isPeriodicSending = false;
                 _uiStateManager.SetPeriodicSendUIState(
-                    this,                  // 폼 인스턴스
+                    this,
                     chkPeriodicSend.Checked,
                     chkContinuousSend.Checked,
-                    isSending: _isPeriodicSending,             // 현재 전송 중 여부
-                    lblInterval,
-                    numInterval,
-                    lblDummySize,
-                    numDummySize,
-                    lblSendCountLimit,
-                    numSendCountLimit,
-                    txtSendMessage,
-                    lblSendMessage,
-                    btnSend,
-                    chkContinuousSend
+                    _isPeriodicSending,
+                    _periodicSendControls
                 );
             }
         });
@@ -514,20 +504,11 @@ public partial class MainForm : Form
     private void chkPeriodicSend_CheckedChanged(object sender, EventArgs e)
     {
         _uiStateManager.SetPeriodicSendUIState(
-            this,                  // 폼 인스턴스
+            this,
             chkPeriodicSend.Checked,
             chkContinuousSend.Checked,
-            isSending: _isPeriodicSending,             // 현재 전송 중 여부
-            lblInterval,
-            numInterval,
-            lblDummySize,
-            numDummySize,
-            lblSendCountLimit,
-            numSendCountLimit,
-            txtSendMessage,
-            lblSendMessage,
-            btnSend,
-            chkContinuousSend
+            _isPeriodicSending,
+            _periodicSendControls
         );
     }
 
@@ -537,20 +518,11 @@ public partial class MainForm : Form
     private void chkContinuousSend_CheckedChanged(object sender, EventArgs e)
     {
         _uiStateManager.SetPeriodicSendUIState(
-            this,                  // 폼 인스턴스
+            this,
             chkPeriodicSend.Checked,
             chkContinuousSend.Checked,
-            isSending: _isPeriodicSending,             // 현재 전송 중 여부
-            lblInterval,
-            numInterval,
-            lblDummySize,
-            numDummySize,
-            lblSendCountLimit,
-            numSendCountLimit,
-            txtSendMessage,
-            lblSendMessage,
-            btnSend,
-            chkContinuousSend
+            _isPeriodicSending,
+            _periodicSendControls
         );
     }
 

@@ -12,32 +12,23 @@ namespace UdpUnicast
             bool isPeriodicChecked,
             bool isContinuousChecked,
             bool isSending,
-            Label lblInterval,
-            NumericUpDown numInterval,
-            Label lblDummySize,
-            NumericUpDown numDummySize,
-            Label lblSendCountLimit,
-            NumericUpDown numSendCountLimit,
-            TextBox txtSendMessage,
-            Label lblSendMessage,
-            Button btnSend,
-            CheckBox chkContinuousSend)
+            PeriodicSendControls controls)
         {
             if (form.InvokeRequired)
             {
-                form.Invoke(new MethodInvoker(() => SetPeriodicSendUIState(form, isPeriodicChecked, isContinuousChecked, isSending, lblInterval, numInterval, lblDummySize, numDummySize, lblSendCountLimit, numSendCountLimit, txtSendMessage, lblSendMessage, btnSend, chkContinuousSend)));
+                form.Invoke(new MethodInvoker(() => SetPeriodicSendUIState(form, isPeriodicChecked, isContinuousChecked, isSending, controls)));
                 return;
             }
-            lblInterval.Enabled = isPeriodicChecked;
-            numInterval.Enabled = isPeriodicChecked && !isSending;
-            lblDummySize.Enabled = isPeriodicChecked;
-            numDummySize.Enabled = isPeriodicChecked && !isSending;
-            lblSendCountLimit.Enabled = isPeriodicChecked && !isContinuousChecked;
-            numSendCountLimit.Enabled = isPeriodicChecked && !isContinuousChecked && !isSending;
-            txtSendMessage.Enabled = !isPeriodicChecked;
-            lblSendMessage.Enabled = !isPeriodicChecked;
-            btnSend.Text = isPeriodicChecked ? (isSending ? "Stop" : "Start") : "Send";
-            chkContinuousSend.Enabled = isPeriodicChecked;
+            controls.LblInterval.Enabled = isPeriodicChecked;
+            controls.NumInterval.Enabled = isPeriodicChecked && !isSending;
+            controls.LblDummySize.Enabled = isPeriodicChecked;
+            controls.NumDummySize.Enabled = isPeriodicChecked && !isSending;
+            controls.LblSendCountLimit.Enabled = isPeriodicChecked && !isContinuousChecked;
+            controls.NumSendCountLimit.Enabled = isPeriodicChecked && !isContinuousChecked && !isSending;
+            controls.TxtSendMessage.Enabled = !isPeriodicChecked;
+            controls.LblSendMessage.Enabled = !isPeriodicChecked;
+            controls.BtnSend.Text = isPeriodicChecked ? (isSending ? "Stop" : "Start") : "Send";
+            controls.ChkContinuousSend.Enabled = isPeriodicChecked;
         }
     }
 }
