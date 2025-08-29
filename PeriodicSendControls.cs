@@ -5,15 +5,16 @@ namespace UdpUnicast
     /// </summary>
     public class PeriodicSendControls
     {
-        public System.Windows.Forms.Label LblInterval { get; set; }
-        public System.Windows.Forms.NumericUpDown NumInterval { get; set; }
-        public System.Windows.Forms.Label LblDummySize { get; set; }
-        public System.Windows.Forms.NumericUpDown NumDummySize { get; set; }
-        public System.Windows.Forms.Label LblSendCountLimit { get; set; }
-        public System.Windows.Forms.NumericUpDown NumSendCountLimit { get; set; }
-        public System.Windows.Forms.TextBox TxtSendMessage { get; set; }
-        public System.Windows.Forms.Label LblSendMessage { get; set; }
-        public System.Windows.Forms.Button BtnSend { get; set; }
-        public System.Windows.Forms.CheckBox ChkContinuousSend { get; set; }
+        public required System.Windows.Forms.Label LblInterval { get; set; }
+        public required System.Windows.Forms.NumericUpDown NumInterval { get; set; }
+        public required System.Windows.Forms.Label LblDummySize { get; set; }
+        public required System.Windows.Forms.NumericUpDown NumDummySize { get; set; }
+        public required System.Windows.Forms.Label LblSendCountLimit { get; set; }
+        public required System.Windows.Forms.NumericUpDown NumSendCountLimit { get; set; }
+        public required System.Windows.Forms.TextBox TxtSendMessage { get; set; }
+        public required System.Windows.Forms.Label LblSendMessage { get; set; }
+        public required System.Windows.Forms.Button BtnSend { get; set; }
+        public required System.Windows.Forms.CheckBox ChkContinuousSend { get; set; }
     }
 }
+
