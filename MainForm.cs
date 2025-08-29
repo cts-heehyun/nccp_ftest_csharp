@@ -369,25 +369,28 @@ public partial class MainForm : Form
             var errFile = Path.ChangeExtension(_logManager.CurrentLogFileName, ".err.csv");
             try
             {
-                List<(string mac, string ip, string err, string mismatch, string over)> snapshot = new();
-                InvokeIfRequired(lvMacStatus, () =>
+                if (!string.IsNullOrEmpty(errFile))
                 {
-                    foreach (ListViewItem item in lvMacStatus.Items)
+                    List<(string mac, string ip, string err, string mismatch, string over)> snapshot = new();
+                    InvokeIfRequired(lvMacStatus, () =>
                     {
-                        string mac = item.Text;
-                        string ip = item.SubItems[1].Text;
-                        string err = item.SubItems[2].Text;
-                        string mismatch = item.SubItems[4].Text;
-                        string over = item.SubItems[5].Text;
-                        snapshot.Add((mac, ip, err, mismatch, over));
-                    }
-                });
+                        foreach (ListViewItem item in lvMacStatus.Items)
+                        {
+                            string mac = item.Text;
+                            string ip = item.SubItems[1].Text;
+                            string err = item.SubItems[2].Text;
+                            string mismatch = item.SubItems[4].Text;
+                            string over = item.SubItems[5].Text;
+                            snapshot.Add((mac, ip, err, mismatch, over));
+                        }
+                    });
 
-                using var errWriter = new StreamWriter(errFile, false, Encoding.UTF8);
-                errWriter.WriteLine("mac,ip,errorCount,mismatchCount,overCount");
-                foreach (var row in snapshot)
-                {
-                    errWriter.WriteLine($"{row.mac},{row.ip},{row.err},{row.mismatch},{row.over}");
+                    using var errWriter = new StreamWriter(errFile, false, Encoding.UTF8);
+                    errWriter.WriteLine("mac,ip,errorCount,mismatchCount,overCount");
+                    foreach (var row in snapshot)
+                    {
+                        errWriter.WriteLine($"{row.mac},{row.ip},{row.err},{row.mismatch},{row.over}");
+                    }
                 }
             }
             catch (Exception ex)
