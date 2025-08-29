@@ -9,7 +9,7 @@ namespace UdpUnicast
     public class DeviceManager
     {
         public ConcurrentDictionary<string, ListViewItem> MacListViewItems { get; } = new();
-        public ConcurrentDictionary<string, bool> RespondedMacsInCycle { get; } = new();
+        public ConcurrentDictionary<string, int> RespondedMacsInCycle { get; } = new();
         public const string ErrorCountDefault = "0";
         public const string ResponseTimeDefault = "N/A";
         public const string TimeoutText = "Timeout";
@@ -104,7 +104,7 @@ namespace UdpUnicast
             });
         }
 
-        public void CheckForMissedResponses(ListView lvMacStatus, Action<string> logCallback)
+        public void CheckForMissedResponses(ListView lvMacStatus, Action<string> logCallback,int LastGlobalSentMessageCounter)
         {
             List<ListViewItem> checkedItems = new List<ListViewItem>();
             InvokeIfRequired(lvMacStatus, () => checkedItems = lvMacStatus.CheckedItems.Cast<ListViewItem>().ToList());
@@ -120,7 +120,7 @@ namespace UdpUnicast
                             item.SubItems[2].Text = (currentErrors + 1).ToString();
                             item.SubItems[3].Text = TimeoutText;
                         });
-                    logCallback?.Invoke($"Don't Received from {item.SubItems[1].Text}, count {item.SubItems[2].Text}");
+                    logCallback?.Invoke($"Don't Received from {item.SubItems[1].Text}, count {item.SubItems[2].Text}, send {(LastGlobalSentMessageCounter).ToString()}");
                 }
             }
             RespondedMacsInCycle.Clear();

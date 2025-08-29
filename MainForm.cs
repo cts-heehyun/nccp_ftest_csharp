@@ -189,16 +189,20 @@ public partial class MainForm : Form
                         // Over Count 처리: 이미 응답한 MAC이면 over count 증가
                         if (_deviceManager.RespondedMacsInCycle.ContainsKey(mac))
                         {
-                            UpdateOverCount(mac);
-                            string ip = remoteEP.Address.ToString();
-                            AppendLog($"Over Received from {ip}");
+                            _deviceManager.RespondedMacsInCycle.TryGetValue(mac, out int Seq);
+                            if (Seq == echoedSeq)
+                            {
+                                UpdateOverCount(mac);
+                                string ip = remoteEP.Address.ToString();
+                                AppendLog($"Over Received from {ip}, send {(_udpManager.LastGlobalSentMessageCounter).ToString()}");
+                            }
                         }
-                        _deviceManager.RespondedMacsInCycle.TryAdd(mac, true);
+                        _deviceManager.RespondedMacsInCycle.TryAdd(mac, echoedSeq);
 
                         // RTT(왕복 시간) 계산
                         if (_udpManager.SentMessageTimestamps.TryGetValue(echoedSeq, out DateTime sendTime))
                         {
-                            var rtt = (DateTime.UtcNow - sendTime).TotalMilliseconds;
+                            var rtt = (DateTime.Now - sendTime).TotalMilliseconds;
                             UpdateDeviceResponseTime(mac, rtt);
                             string ip = remoteEP.Address.ToString();
                             // 그래프 데이터 추가 및 갱신
@@ -433,27 +437,27 @@ public partial class MainForm : Form
     /// <summary>
     /// UdpManager로부터 송/수신 로그 콜백을 받아 처리합니다. (주로 송신 기록용)
     /// </summary>
-    private void UdpManager_SendRecvLogCallback(string type, string ip, string? fileName, long sendTimeMs, long? responseTimeMs)
+    private void UdpManager_SendRecvLogCallback(string type, string ip, string? fileName, string time, long? responseTimeMs)
     {
         // 로그 기록은 LogManager에서 처리
         if (type == "send")
         {
             int seq = _udpManager.LastGlobalSentMessageCounter;
             // RTT 계산용 전송 시간 저장 (별도 관리 필요시 LogManager에 추가 구현)
-            _logManager.WriteLog($"send,{ip},{seq},{DateTime.Now:HH:mm:ss.fff},");
+            _logManager.WriteLog($"send,{ip},{seq},{time},");
         }
         // 수신 로그는 MessageReceived 핸들러에서 직접 기록합니다.
     }
 
     // 주기적 전송의 한 사이클이 끝날 때 응답 없는 장치 처리도 DeviceManager로 위임
-    private void CheckForMissedResponses() => _deviceManager.CheckForMissedResponses(lvMacStatus, AppendLog);
+    private void CheckForMissedResponses() => _deviceManager.CheckForMissedResponses(lvMacStatus, AppendLog, _udpManager.LastGlobalSentMessageCounter);
 
     /// <summary>
     /// 오래된 전송 타임스탬프를 정리하여 메모리 사용량을 관리합니다.
     /// </summary>
     private void CleanupOldTimestamps()
     {
-        var cutoff = DateTime.UtcNow.AddSeconds(-5); // 5초 이상 지난 타임스탬프 제거
+        var cutoff = DateTime.Now.AddSeconds(-5); // 5초 이상 지난 타임스탬프 제거
         foreach (var pair in _udpManager.SentMessageTimestamps)
         {
             if (pair.Value < cutoff)

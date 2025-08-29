@@ -35,7 +35,7 @@ namespace UdpUnicast
         /// <summary>
         /// 송수신 로그 기록을 위한 콜백 (타입, 소스IP, 파일명?, 송신시간(ms), 응답시간(ms))
         /// </summary>
-        public Action<string, string, string?, long, long?>? SendRecvLogCallback;
+        public Action<string, string, string?, string, long?>? SendRecvLogCallback;
 
         /// <summary>
         /// 응답 없는 장치 확인을 위한 콜백
@@ -123,10 +123,14 @@ namespace UdpUnicast
                     
                     // 메시지를 비동기적으로 수신
                     var receivedResult = await client.ReceiveAsync(token);
-                    // 메시지 수신 이벤트 호출
-                    MessageReceived?.Invoke(receivedResult.Buffer, receivedResult.RemoteEndPoint);
-                    // 수신 로그 콜백 호출 (type, sourceIp, 파일명 null, 송신 시간 0, 응답 시간 ms)
-                    SendRecvLogCallback?.Invoke("recv", receivedResult.RemoteEndPoint.Address.ToString(), null, 0, (long)(DateTime.UtcNow - DateTime.UnixEpoch).TotalMilliseconds);
+                    lock (_udpLock)
+                    {
+                        // 메시지 수신 이벤트 호출
+                        MessageReceived?.Invoke(receivedResult.Buffer, receivedResult.RemoteEndPoint);
+                        // 수신 로그 콜백 호출 (type, sourceIp, 파일명 null, 송신 시간 0, 응답 시간 ms)
+                        //SendRecvLogCallback?.Invoke("recv", receivedResult.RemoteEndPoint.Address.ToString(), null, "0", (long)(DateTime.Now - DateTime.UnixEpoch).TotalMilliseconds);
+                    }
+                        
                 }
                 catch (OperationCanceledException)
                 {
@@ -164,7 +168,7 @@ namespace UdpUnicast
                     // RTT 계산을 위해 시퀀스 번호와 전송 시간 기록
                     _messageCounter = int.Parse(parts[0]);
                     LastGlobalSentMessageCounter = _messageCounter;
-                    SentMessageTimestamps[_messageCounter] = DateTime.UtcNow;
+                    SentMessageTimestamps[_messageCounter] = DateTime.Now;
 
                     CheckForMissedResponses?.Invoke();
                 }
@@ -199,6 +203,8 @@ namespace UdpUnicast
 
             LogMessage?.Invoke($"Start");
 
+            client.EnableBroadcast = enableBroadcast;
+
             // 주기적 전송을 위한 백그라운드 작업 시작
             Task.Run(async () =>
             {
@@ -215,26 +221,25 @@ namespace UdpUnicast
                             break;
                         }
 
-                        // 응답 없는 장치 확인 및 타임스탬프 정리 콜백 호출
-                        CheckForMissedResponses?.Invoke();
-                        CleanupOldTimestamps?.Invoke();
-
                         // 더미 데이터를 포함한 메시지 생성
                         var dummyData = new string('X', dummySize);
                         var message = $"<FTEST,{_messageCounter},{dummyData}>";
                         byte[] bytesToSend = Encoding.UTF8.GetBytes(message);
 
-                        var now = DateTime.UtcNow;
-                        LastGlobalSentMessageCounter = _messageCounter;
-                        SentMessageTimestamps[_messageCounter] = now;
-
-                        // 송신 로그 콜백 호출 (type, sourceIp, 파일명, 송신 시간 ms, 응답 시간 null)
-                        string localIp = ((IPEndPoint)client.Client.LocalEndPoint!).Address.ToString();
-                        SendRecvLogCallback?.Invoke("send", localIp, logFileName, (long)(now - DateTime.UnixEpoch).TotalMilliseconds, null);
-
-                        client.EnableBroadcast = enableBroadcast;
+                        var now = DateTime.Now;
+                        lock (_udpLock)
+                        {
+                            LastGlobalSentMessageCounter = _messageCounter;
+                            SentMessageTimestamps[_messageCounter] = now;
+                            // 응답 없는 장치 확인 및 타임스탬프 정리 콜백 호출
+                            CheckForMissedResponses?.Invoke();
+                            CleanupOldTimestamps?.Invoke();
+                            // 송신 로그 콜백 호출 (type, sourceIp, 파일명, 송신 시간 ms, 응답 시간 null)
+                            string localIp = ((IPEndPoint)client.Client.LocalEndPoint!).Address.ToString();
+                            SendRecvLogCallback?.Invoke("send", localIp, logFileName, now.ToString("HH:mm:ss.fff"), null);
+                        }
                         await client.SendAsync(bytesToSend, targetEndPoint);
-                        
+
                         _messageCounter++;
                         _periodicSendCount++;
                         if (_messageCounter > 65535) _messageCounter = 1; // 시퀀스 번호 순환
