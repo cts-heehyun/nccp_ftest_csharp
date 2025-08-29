@@ -23,6 +23,7 @@ public partial class MainForm : Form
     private readonly UIStateManager _uiStateManager = new();
     // UDP 통신 핵심 로직을 처리하는 관리자 클래스
     private readonly UdpManager _udpManager;
+    private readonly FtestProtocolParser _protocolParser = new();
     // 주기적 전송 관련 컨트롤 DTO
     private readonly PeriodicSendControls _periodicSendControls;
     // UDP 리스너 동작 상태 플래그
@@ -165,90 +166,95 @@ public partial class MainForm : Form
     }
 
     /// <summary>
-    /// UDP 메시지 수신 시 호출되는 핵심 처리 메서드입니다.
+    /// UDP 메시지 수신 시 호출되는 라우팅 메서드입니다.
+    /// 수신된 메시지를 파싱하여 적절한 처리 메서드로 분기합니다.
     /// </summary>
-    /// <param name="buffer">수신된 데이터 버퍼</param>
-    /// <param name="remoteEP">송신자 EndPoint</param>
     private void UdpManager_MessageReceived(byte[] buffer, IPEndPoint remoteEP)
     {
-        var rawMessage = Encoding.UTF8.GetString(buffer);
-
-        // FTEST 프로토콜 응답 메시지인지 확인
-        const string ResponsePrefix = "[FTEST,0,";
-        if (rawMessage.StartsWith(ResponsePrefix) && rawMessage.EndsWith("]"))
+        var ftestMessage = _protocolParser.Parse(buffer, remoteEP);
+        if (ftestMessage != null)
         {
-            string content = rawMessage[ResponsePrefix.Length..^1];
-            string[] parts = content.Split(new[] { ',' }, 5);
-            if (parts.Length == 5)
-            {
-                string mac = parts[0];
-                string echoedSeqStr = parts[1];
-                AddOrUpdateMac(mac, remoteEP.Address.ToString());
-                if (int.TryParse(echoedSeqStr, out int echoedSeq))
-                {
-                    if (echoedSeq != _udpManager.LastGlobalSentMessageCounter)
-                    {
-                        UpdateMismatchCount(mac);
-                        string ip = remoteEP.Address.ToString();
-                        AppendLog($"Delay Received from {ip}, recv {(echoedSeq).ToString()}, send {(_udpManager.LastGlobalSentMessageCounter).ToString()}");
-                    }
-                    else
-                    {
-                        // Over Count 처리: 이미 응답한 MAC이면 over count 증가
-                        if (_deviceManager.RespondedMacsInCycle.ContainsKey(mac))
-                        {
-                            _deviceManager.RespondedMacsInCycle.TryGetValue(mac, out int Seq);
-                            if (Seq == echoedSeq)
-                            {
-                                UpdateOverCount(mac);
-                                string ip = remoteEP.Address.ToString();
-                                AppendLog($"Over Received from {ip}, send {(_udpManager.LastGlobalSentMessageCounter).ToString()}");
-                            }
-                        }
-                        _deviceManager.RespondedMacsInCycle.TryAdd(mac, echoedSeq);
-
-                        // RTT(왕복 시간) 계산
-                        if (_udpManager.SentMessageTimestamps.TryGetValue(echoedSeq, out DateTime sendTime))
-                        {
-                            var rtt = (DateTime.Now - sendTime).TotalMilliseconds;
-                            UpdateDeviceResponseTime(mac, rtt);
-                            string ip = remoteEP.Address.ToString();
-                            // 그래프 데이터 추가 및 갱신
-                            _graphManager.AddResponse(ip, echoedSeq, rtt);
-                            // 콤보박스에 IP 추가 및 선택
-                            InvokeIfRequired(cmbGraphIp, () =>
-                            {
-                                if (!cmbGraphIp.Items.Contains(ip))
-                                {
-                                    cmbGraphIp.Items.Add(ip);
-                                    if (cmbGraphIp.Items.Count == 1)
-                                    {
-                                        cmbGraphIp.SelectedIndex = 0;
-                                        _graphManager.SetCurrentGraphIp(ip);
-                                    }
-                                }
-                                if (ip == cmbGraphIp.SelectedItem as string)
-                                {
-                                    _graphManager.SetCurrentGraphIp(ip);
-                                    _graphManager.UpdateGraph(formsPlot);
-                                }
-                            });
-                            // CSV 로그 기록
-                            // (sendLogMap 등은 MainForm에서 관리 필요, 여기서는 생략)
-                            if (_logManager.CurrentLogFileName != null)
-                            {
-                                string rttStr = rtt.ToString("F1");
-                                _logManager.WriteLog($"recv,{ip},{echoedSeq},,{rttStr}");
-                            }
-                        }
-                    }
-                }
-            }
+            ProcessFtestMessage(ftestMessage);
         }
         else
         {
-            AppendLog($"Received from {remoteEP}: {rawMessage}");
+            var rawMessage = Encoding.UTF8.GetString(buffer);
+            ProcessNonFtestMessage(rawMessage, remoteEP);
         }
+    }
+
+    /// <summary>
+    /// FTEST 프로토콜 메시지를 처리합니다.
+    /// </summary>
+    /// <param name="message">파싱된 FTEST 메시지 객체</param>
+    private void ProcessFtestMessage(FtestMessage message)
+    {
+        AddOrUpdateMac(message.Mac, message.SourceIp);
+
+        // 시퀀스 번호가 일치하지 않는 경우 (지연 응답)
+        if (message.EchoedSequence != _udpManager.LastGlobalSentMessageCounter)
+        {
+            UpdateMismatchCount(message.Mac);
+            AppendLog($"Delay Received from {message.SourceIp}, recv {message.EchoedSequence}, send {_udpManager.LastGlobalSentMessageCounter}");
+            return;
+        }
+
+        // Over Count 처리 (동일 사이클 내 중복 응답)
+        if (_deviceManager.RespondedMacsInCycle.TryGetValue(message.Mac, out int seq) && seq == message.EchoedSequence)
+        {
+            UpdateOverCount(message.Mac);
+            AppendLog($"Over Received from {message.SourceIp}, send {_udpManager.LastGlobalSentMessageCounter}");
+        }
+        _deviceManager.RespondedMacsInCycle.TryAdd(message.Mac, message.EchoedSequence);
+
+        // RTT(왕복 시간) 계산 및 관련 UI/로그 처리
+        if (_udpManager.SentMessageTimestamps.TryGetValue(message.EchoedSequence, out DateTime sendTime))
+        {
+            var rtt = (DateTime.Now - sendTime).TotalMilliseconds;
+            UpdateDeviceResponseTime(message.Mac, rtt);
+
+            _graphManager.AddResponse(message.SourceIp, message.EchoedSequence, rtt);
+            UpdateGraphUI(message.SourceIp);
+
+            if (_logManager.CurrentLogFileName != null)
+            {
+                string rttStr = rtt.ToString("F1");
+                _logManager.WriteLog($"recv,{message.SourceIp},{message.EchoedSequence},,{rttStr}");
+            }
+        }
+    }
+
+    /// <summary>
+    /// FTEST 프로토콜이 아닌 일반 메시지를 처리합니다.
+    /// </summary>
+    private void ProcessNonFtestMessage(string rawMessage, IPEndPoint remoteEP)
+    {
+        AppendLog($"Received from {remoteEP}: {rawMessage}");
+    }
+
+    /// <summary>
+    /// 그래프와 관련된 UI(콤보박스, 플롯)를 업데이트합니다.
+    /// </summary>
+    /// <param name="ip">업데이트할 장치의 IP 주소</param>
+    private void UpdateGraphUI(string ip)
+    {
+        InvokeIfRequired(cmbGraphIp, () =>
+        {
+            if (!cmbGraphIp.Items.Contains(ip))
+            {
+                cmbGraphIp.Items.Add(ip);
+                if (cmbGraphIp.Items.Count == 1)
+                {
+                    cmbGraphIp.SelectedIndex = 0;
+                    _graphManager.SetCurrentGraphIp(ip);
+                }
+            }
+            if (ip == cmbGraphIp.SelectedItem as string)
+            {
+                _graphManager.SetCurrentGraphIp(ip);
+                _graphManager.UpdateGraph(formsPlot);
+            }
+        });
     }
 
     /// <summary>
