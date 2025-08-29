@@ -232,7 +232,7 @@ namespace UdpUnicast
             // numDummySize
             // 
             numDummySize.Location = new Point(399, 26);
-            numDummySize.Maximum = new decimal(new int[] { 500, 0, 0, 0 });
+            numDummySize.Maximum = new decimal(new int[] { 1000, 0, 0, 0 });
             numDummySize.Minimum = new decimal(new int[] { 100, 0, 0, 0 });
             numDummySize.Name = "numDummySize";
             numDummySize.Size = new Size(70, 23);
