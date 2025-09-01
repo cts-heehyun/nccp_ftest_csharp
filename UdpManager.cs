@@ -52,6 +52,7 @@ namespace UdpUnicast
         private int _messageCounter = 0;
         private int _periodicSendCount = 0;
         private readonly object _udpLock = new();
+        private readonly object _sendRecvLock = new();
         private bool _disposed = false;
 
         /// <summary>
@@ -94,7 +95,7 @@ namespace UdpUnicast
         /// </summary>
         public void StopListener()
         {
-            //lock (_udpLock)
+            lock (_udpLock)
             {
                 // 주기적 전송이 활성화되어 있으면 중지
                 StopPeriodicSend();
@@ -123,7 +124,7 @@ namespace UdpUnicast
                     
                     // 메시지를 비동기적으로 수신
                     var receivedResult = await client.ReceiveAsync(token);
-                    lock (_udpLock)
+                    lock (_sendRecvLock)
                     {
                         // 메시지 수신 이벤트 호출
                         MessageReceived?.Invoke(receivedResult.Buffer, receivedResult.RemoteEndPoint);
@@ -227,7 +228,7 @@ namespace UdpUnicast
                         byte[] bytesToSend = Encoding.UTF8.GetBytes(message);
 
                         var now = DateTime.Now;
-                        lock (_udpLock)
+                        lock (_sendRecvLock)
                         {
                             LastGlobalSentMessageCounter = _messageCounter;
                             SentMessageTimestamps[_messageCounter] = now;
