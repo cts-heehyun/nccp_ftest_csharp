@@ -94,7 +94,7 @@ namespace UdpUnicast
         /// </summary>
         public void StopListener()
         {
-            lock (_udpLock)
+            //lock (_udpLock)
             {
                 // 주기적 전송이 활성화되어 있으면 중지
                 StopPeriodicSend();
@@ -259,8 +259,12 @@ namespace UdpUnicast
         /// </summary>
         public void StopPeriodicSend()
         {
-            _periodicSendCts?.Cancel();
-            _periodicSendCts = null;
+            if (_periodicSendCts != null)
+            {
+                _periodicSendCts.Cancel();
+                _periodicSendCts.Dispose();
+                _periodicSendCts = null;
+            }
             PeriodicSendStatusChanged?.Invoke("Stop");
         }
 
