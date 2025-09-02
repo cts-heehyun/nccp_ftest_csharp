@@ -31,5 +31,5 @@ jobs:
     - name: Run static analysis
       run: |
         dotnet tool install --global dotnet-format
-        dotnet format --check
+        dotnet format udp_unicast.sln --check
         # StyleCop.Analyzers 또는 SonarQube 추가 가능
