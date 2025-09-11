@@ -166,12 +166,11 @@ namespace UdpUnicast
                     string content = fullMessage[SendPrefix.Length..^1];
                     string[] parts = content.Split(new[] { ',' }, 5);
 
+                    CheckForMissedResponses?.Invoke();
                     // RTT 계산을 위해 시퀀스 번호와 전송 시간 기록
                     _messageCounter = int.Parse(parts[0]);
                     LastGlobalSentMessageCounter = _messageCounter;
                     SentMessageTimestamps[_messageCounter] = DateTime.Now;
-
-                    CheckForMissedResponses?.Invoke();
                 }
 
                 await client.SendAsync(bytesToSend, targetEndPoint);
@@ -230,11 +229,12 @@ namespace UdpUnicast
                         var now = DateTime.Now;
                         lock (_sendRecvLock)
                         {
-                            LastGlobalSentMessageCounter = _messageCounter;
-                            SentMessageTimestamps[_messageCounter] = now;
                             // 응답 없는 장치 확인 및 타임스탬프 정리 콜백 호출
                             CheckForMissedResponses?.Invoke();
                             CleanupOldTimestamps?.Invoke();
+
+                            LastGlobalSentMessageCounter = _messageCounter;
+                            SentMessageTimestamps[_messageCounter] = now;
                             // 송신 로그 콜백 호출 (type, sourceIp, 파일명, 송신 시간 ms, 응답 시간 null)
                             string localIp = ((IPEndPoint)client.Client.LocalEndPoint!).Address.ToString();
                             SendRecvLogCallback?.Invoke("send", localIp, logFileName, now.ToString("HH:mm:ss.fff"), null);
