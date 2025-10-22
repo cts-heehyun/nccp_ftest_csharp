@@ -9,7 +9,7 @@ namespace UdpUnicast
     /// </summary>
     public class LogManager : IDisposable
     {
-        private StreamWriter? _logWriter;
+        private StreamWriter? _logWriter = null;
         private readonly object _logLock = new();
         public string? CurrentLogFileName { get; private set; }
 

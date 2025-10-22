@@ -32,6 +32,7 @@ namespace UdpUnicast
             lblBindIp = new Label();
             lblDeviceCount = new Label();
             grpSend = new GroupBox();
+            chkLogEnable = new CheckBox();
             lblDummySize = new Label();
             numDummySize = new NumericUpDown();
             lblSendCountLimit = new Label();
@@ -202,6 +203,7 @@ namespace UdpUnicast
             // grpSend
             // 
             grpSend.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
+            grpSend.Controls.Add(chkLogEnable);
             grpSend.Controls.Add(lblDummySize);
             grpSend.Controls.Add(numDummySize);
             grpSend.Controls.Add(lblSendCountLimit);
@@ -219,6 +221,18 @@ namespace UdpUnicast
             grpSend.TabIndex = 1;
             grpSend.TabStop = false;
             grpSend.Text = "Send Message";
+            // 
+            // chkLogEnable
+            // 
+            chkLogEnable.AutoSize = true;
+            chkLogEnable.Checked = true;
+            chkLogEnable.CheckState = CheckState.Checked;
+            chkLogEnable.Location = new Point(680, 52);
+            chkLogEnable.Name = "chkLogEnable";
+            chkLogEnable.Size = new Size(88, 19);
+            chkLogEnable.TabIndex = 13;
+            chkLogEnable.Text = "LOG Enable";
+            chkLogEnable.UseVisualStyleBackColor = true;
             // 
             // lblDummySize
             // 
@@ -310,34 +324,41 @@ namespace UdpUnicast
             lvMacStatus.TabIndex = 0;
             lvMacStatus.UseCompatibleStateImageBehavior = false;
             lvMacStatus.View = View.Details;
+            lvMacStatus.ColumnClick += lvMacStatus_ColumnClick;
             // 
             // colMacAddress
             // 
+            colMacAddress.Tag = "Text";
             colMacAddress.Text = "MAC Address";
             colMacAddress.Width = 150;
             // 
             // colIpAddress
             // 
+            colIpAddress.Tag = "Text";
             colIpAddress.Text = "IP Address";
             colIpAddress.Width = 120;
             // 
             // colErrorCount
             // 
+            colErrorCount.Tag = "Numeric";
             colErrorCount.Text = "Error Count";
             colErrorCount.Width = 80;
             // 
             // colResponseTime
             // 
+            colResponseTime.Tag = "Numeric";
             colResponseTime.Text = "Response Time (ms)";
             colResponseTime.Width = 120;
             // 
             // colMismatchCount
             // 
+            colMismatchCount.Tag = "Numeric";
             colMismatchCount.Text = "Mismatch Count";
             colMismatchCount.Width = 150;
             // 
             // colOverCount
             // 
+            colOverCount.Tag = "Numeric";
             colOverCount.Text = "Over Count";
             colOverCount.Width = 100;
             // 
@@ -485,5 +506,6 @@ namespace UdpUnicast
         private System.Windows.Forms.TabPage tabPageLog;
         private System.Windows.Forms.TabPage tabPageGraph;
         private ScottPlot.WinForms.FormsPlot formsPlot;
+        private CheckBox chkLogEnable;
     }
 }

@@ -224,6 +224,7 @@ namespace UdpUnicast
                         // 더미 데이터를 포함한 메시지 생성
                         var dummyData = new string('X', dummySize);
                         var message = $"<FTEST,{_messageCounter},{dummyData}>";
+                        if(_messageCounter == 0) message = $"<FTEST,{_messageCounter},{interval}>";
                         byte[] bytesToSend = Encoding.UTF8.GetBytes(message);
 
                         var now = DateTime.Now;

@@ -1,9 +1,9 @@
+using ScottPlot.WinForms;
 using System.Collections.Concurrent;
+using System.Globalization;
+using System.IO;
 using System.Net;
 using System.Net.Sockets;
-using System.IO;
-
-using ScottPlot.WinForms;
 using System.Text;
 
 namespace UdpUnicast;
@@ -275,8 +275,8 @@ public partial class MainForm : Form
     /// <param name="ip">그래프를 그릴 IP 주소</param>
     private void UpdateGraph(string ip)
     {
-    // 그래프 갱신은 GraphManager에서 처리
-    InvokeIfRequired(formsPlot, () => _graphManager.UpdateGraph(formsPlot));
+        // 그래프 갱신은 GraphManager에서 처리
+        InvokeIfRequired(formsPlot, () => _graphManager.UpdateGraph(formsPlot));
     }
 
     /// <summary>
@@ -345,7 +345,7 @@ public partial class MainForm : Form
 
     // 모든 장치의 오류 및 불일치 카운트 초기화도 DeviceManager로 위임
     private void ResetDeviceErrorAndMismatch() => _deviceManager.ResetDeviceErrorAndMismatch(lvMacStatus);
-    
+
     /// <summary>
     /// 주기적 전송 상태 변경 시 호출됩니다. CSV 로깅을 시작하거나 중지합니다.
     /// </summary>
@@ -356,7 +356,7 @@ public partial class MainForm : Form
         var state = parts[0];
         var fileName = parts.Length > 1 ? parts[1] : null;
 
-        if (state == "Start" && fileName != null)
+        if (state == "Start" && fileName != null && chkLogEnable.Checked == true)
         {
             try
             {
@@ -432,7 +432,7 @@ public partial class MainForm : Form
             }
         });
     }
-    
+
     /// <summary>
     /// UdpManager로부터 송/수신 로그 콜백을 받아 처리합니다. (주로 송신 기록용)
     /// </summary>
@@ -569,15 +569,15 @@ public partial class MainForm : Form
     /// </summary>
     private void chkEnableBroadcast_CheckedChanged(object sender, EventArgs e)
     {
-        if (chkEnableBroadcast.Checked) 
-        { 
-            txtIpAddress.Text = "255.255.255.255"; 
-            txtIpAddress.Enabled = false; 
+        if (chkEnableBroadcast.Checked)
+        {
+            txtIpAddress.Text = "255.255.255.255";
+            txtIpAddress.Enabled = false;
         }
-        else 
-        { 
-            txtIpAddress.Text = "127.0.0.1"; 
-            txtIpAddress.Enabled = true; 
+        else
+        {
+            txtIpAddress.Text = "127.0.0.1";
+            txtIpAddress.Enabled = true;
         }
     }
 
@@ -599,5 +599,23 @@ public partial class MainForm : Form
     private void MainForm_FormClosing(object sender, FormClosingEventArgs e)
     {
         try { _udpManager.Dispose(); } catch { }
+    }
+
+    private void lvMacStatus_ColumnClick(object sender, ColumnClickEventArgs e)
+    {
+        if (lvMacStatus.Sorting == SortOrder.Ascending)
+        {
+            lvMacStatus.Sorting = SortOrder.Descending;
+        }
+        else
+        {
+            lvMacStatus.Sorting = SortOrder.Ascending;
+        }
+
+        lvMacStatus.ListViewItemSorter = new Sorter();      // * 1
+        Sorter s = (Sorter)lvMacStatus.ListViewItemSorter;
+        s.Order = lvMacStatus.Sorting;
+        s.Column = e.Column;
+        lvMacStatus.Sort();
     }
 }
