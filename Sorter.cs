@@ -57,7 +57,7 @@ namespace UdpUnicast
                 string str1 = l1.SubItems[Column].Text;
                 string str2 = l2.SubItems[Column].Text;
 
-                if(Column == 1)
+                if(Column == 0)
                 {
                     string[] words1 = str1.Split('.');
                     string[] words2 = str2.Split('.');

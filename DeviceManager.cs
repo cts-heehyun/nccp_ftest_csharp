@@ -16,26 +16,37 @@ namespace UdpUnicast
 
         public void AddOrUpdateMac(ListView lvMacStatus, string mac, string ipAddress, Action<string> logCallback, Action updateDeviceCount)
         {
-            if (MacListViewItems.TryGetValue(mac, out var existingItem))
+            if (MacListViewItems.TryGetValue(ipAddress, out var existingItem))
             {
-                if (existingItem.SubItems[1].Text != ipAddress)
+                if (existingItem.SubItems[1].Text != mac)
                 {
                     if (existingItem.ListView != null)
-                        InvokeIfRequired(existingItem.ListView, () => existingItem.SubItems[1].Text = ipAddress);
+                        InvokeIfRequired(existingItem.ListView, () => existingItem.SubItems[1].Text = mac);
                 }
                 return;
             }
             InvokeIfRequired(lvMacStatus, () =>
             {
-                if (MacListViewItems.ContainsKey(mac)) return;
-                var item = new ListViewItem(mac) { Checked = true };
-                item.SubItems.Add(ipAddress);
+                if (MacListViewItems.ContainsKey(ipAddress)) return;
+                var item = new ListViewItem(ipAddress) { Checked = true };
+                item.SubItems.Add(mac);
                 item.SubItems.Add(ErrorCountDefault);
                 item.SubItems.Add(ResponseTimeDefault);
                 item.SubItems.Add(ErrorCountDefault);
                 item.SubItems.Add(ErrorCountDefault);
+                item.SubItems.Add("-");
+                item.SubItems.Add("-");
+                item.SubItems.Add("-");
+                item.SubItems.Add("-");
+                item.SubItems.Add("-");
+                item.SubItems.Add("-");
+                item.SubItems.Add("-");
+                item.SubItems.Add("-");
+                item.SubItems.Add("-");
+                item.SubItems.Add("-");
+                item.SubItems.Add("-");
                 lvMacStatus.Items.Add(item);
-                MacListViewItems.TryAdd(mac, item);
+                MacListViewItems.TryAdd(ipAddress, item);
                 logCallback?.Invoke($"New device discovered: {mac} at {ipAddress}");
                 updateDeviceCount?.Invoke();
             });
@@ -49,9 +60,9 @@ namespace UdpUnicast
             });
         }
 
-        public void UpdateOverCount(string mac)
+        public void UpdateOverCount(string ipAddress)
         {
-            if (MacListViewItems.TryGetValue(mac, out var item))
+            if (MacListViewItems.TryGetValue(ipAddress, out var item))
             {
                 InvokeIfRequired(item.ListView!, () =>
                 {
@@ -64,9 +75,9 @@ namespace UdpUnicast
             }
         }
 
-        public void UpdateMismatchCount(string mac)
+        public void UpdateMismatchCount(string ipAddress)
         {
-            if (MacListViewItems.TryGetValue(mac, out var item))
+            if (MacListViewItems.TryGetValue(ipAddress, out var item))
             {
                 InvokeIfRequired(item.ListView!, () =>
                 {
@@ -79,9 +90,9 @@ namespace UdpUnicast
             }
         }
 
-        public void UpdateDeviceResponseTime(string mac, double rtt)
+        public void UpdateDeviceResponseTime(string ipAddress, double rtt)
         {
-            if (MacListViewItems.TryGetValue(mac, out var item))
+            if (MacListViewItems.TryGetValue(ipAddress, out var item))
             {
                 if (item.ListView != null)
                     InvokeIfRequired(item.ListView, () => item.SubItems[3].Text = rtt.ToString("F1"));
@@ -110,8 +121,8 @@ namespace UdpUnicast
             InvokeIfRequired(lvMacStatus, () => checkedItems = lvMacStatus.CheckedItems.Cast<ListViewItem>().ToList());
             foreach (var item in checkedItems)
             {
-                string mac = item.Text;
-                if (!RespondedMacsInCycle.ContainsKey(mac))
+                string ipAddress = item.Text;
+                if (!RespondedMacsInCycle.ContainsKey(ipAddress))
                 {
                     if (item.ListView != null)
                         InvokeIfRequired(item.ListView, () =>
@@ -124,6 +135,49 @@ namespace UdpUnicast
                 }
             }
             RespondedMacsInCycle.Clear();
+        }
+
+        public void UpdatePcir(PcirMessage message)
+        {
+            if (MacListViewItems.TryGetValue(message.SourceIp, out var item))
+            {
+                InvokeIfRequired(item.ListView!, () =>
+                {
+                    item.SubItems[6].Text = message.Id.ToString();
+                    item.SubItems[7].Text = message.LinkFailCount.ToString();
+                    item.SubItems[8].Text = message.MaxCycle.ToString();
+                    item.SubItems[9].Text = message.MinCycle.ToString();
+                    item.SubItems[10].Text = message.Over15msCycle.ToString();
+                    item.SubItems[11].Text = message.Over20msCycle.ToString();
+                    item.SubItems[12].Text = message.Over25msCycle.ToString();
+                    item.SubItems[13].Text = message.Over30msCycle.ToString();
+                    item.SubItems[14].Text = message.CommRecvCount.ToString();
+                    item.SubItems[15].Text = message.CommRecvDoubleCount.ToString();
+                    item.SubItems[16].Text = message.CommRecvFailCount.ToString();
+                });
+            }
+        }
+
+        public void UpdateInitPcir(ListView lvMacStatus)
+        {
+            InvokeIfRequired(lvMacStatus, () =>
+            {
+                foreach (ListViewItem item in lvMacStatus.Items)
+                {
+                    item.SubItems[6].Text = "-";
+                    item.SubItems[7].Text = "-";
+                    item.SubItems[8].Text = "-";
+                    item.SubItems[9].Text = "-";
+                    item.SubItems[10].Text = "-";
+                    item.SubItems[11].Text = "-";
+                    item.SubItems[12].Text = "-";
+                    item.SubItems[13].Text = "-";
+                    item.SubItems[14].Text = "-";
+                    item.SubItems[15].Text = "-";
+                    item.SubItems[16].Text = "-";
+                }
+            });
+            
         }
 
         private void InvokeIfRequired(Control control, Action action)

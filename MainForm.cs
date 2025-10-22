@@ -4,7 +4,9 @@ using System.Globalization;
 using System.IO;
 using System.Net;
 using System.Net.Sockets;
+using System.Security.Cryptography;
 using System.Text;
+using System.Windows.Forms;
 
 namespace UdpUnicast;
 
@@ -172,15 +174,22 @@ public partial class MainForm : Form
     private void UdpManager_MessageReceived(byte[] buffer, IPEndPoint remoteEP)
     {
         var ftestMessage = _protocolParser.Parse(buffer, remoteEP);
+        var PcirMessage = _protocolParser.PcirParse(buffer, remoteEP);
         if (ftestMessage != null)
         {
             ProcessFtestMessage(ftestMessage);
+        }
+        else if (PcirMessage != null)
+        {
+            ProcessPcirMessage(PcirMessage);
         }
         else
         {
             var rawMessage = Encoding.UTF8.GetString(buffer);
             ProcessNonFtestMessage(rawMessage, remoteEP);
         }
+
+
     }
 
     /// <summary>
@@ -194,24 +203,24 @@ public partial class MainForm : Form
         // 시퀀스 번호가 일치하지 않는 경우 (지연 응답)
         if (message.EchoedSequence != _udpManager.LastGlobalSentMessageCounter)
         {
-            UpdateMismatchCount(message.Mac);
+            UpdateMismatchCount(message.SourceIp);
             AppendLog($"Delay Received from {message.SourceIp}, recv {message.EchoedSequence}, send {_udpManager.LastGlobalSentMessageCounter}");
             return;
         }
 
         // Over Count 처리 (동일 사이클 내 중복 응답)
-        if (_deviceManager.RespondedMacsInCycle.TryGetValue(message.Mac, out int seq) && seq == message.EchoedSequence)
+        if (_deviceManager.RespondedMacsInCycle.TryGetValue(message.SourceIp, out int seq) && seq == message.EchoedSequence)
         {
-            UpdateOverCount(message.Mac);
+            UpdateOverCount(message.SourceIp);
             AppendLog($"Over Received from {message.SourceIp}, send {_udpManager.LastGlobalSentMessageCounter}");
         }
-        _deviceManager.RespondedMacsInCycle.TryAdd(message.Mac, message.EchoedSequence);
+        _deviceManager.RespondedMacsInCycle.TryAdd(message.SourceIp, message.EchoedSequence);
 
         // RTT(왕복 시간) 계산 및 관련 UI/로그 처리
         if (_udpManager.SentMessageTimestamps.TryGetValue(message.EchoedSequence, out DateTime sendTime))
         {
             var rtt = (DateTime.Now - sendTime).TotalMilliseconds;
-            UpdateDeviceResponseTime(message.Mac, rtt);
+            UpdateDeviceResponseTime(message.SourceIp, rtt);
 
             _graphManager.AddResponse(message.SourceIp, message.EchoedSequence, rtt);
             UpdateGraphUI(message.SourceIp);
@@ -222,6 +231,11 @@ public partial class MainForm : Form
                 _logManager.WriteLog($"recv,{message.SourceIp},{message.EchoedSequence},,{rttStr}");
             }
         }
+    }
+
+    private void ProcessPcirMessage(PcirMessage message)
+    {
+        UpdatePcir(message);
     }
 
     /// <summary>
@@ -298,6 +312,7 @@ public partial class MainForm : Form
     // 장치의 응답 시간(RTT) UI 업데이트도 DeviceManager로 위임
     private void UpdateDeviceResponseTime(string mac, double rtt) => _deviceManager.UpdateDeviceResponseTime(mac, rtt);
 
+    private void UpdatePcir(PcirMessage message) => _deviceManager.UpdatePcir(message);
     /// <summary>
     /// "Send" 버튼 클릭 시 단일 또는 주기적 메시지 전송을 시작/중지합니다.
     /// </summary>
@@ -316,6 +331,7 @@ public partial class MainForm : Form
                 ResetDeviceErrorAndMismatch(); // 통계 초기화
                 ResetGraphData();              // 그래프 데이터 초기화
                 txtLog.Clear();
+                _deviceManager.UpdateInitPcir(lvMacStatus);
                 _graphManager.Y_Max_limit = (int)numInterval.Value;
                 _udpManager.StartPeriodicSend(targetEndPoint!, chkEnableBroadcast.Checked, (int)numInterval.Value, (int)numDummySize.Value, (int)numSendCountLimit.Value, chkContinuousSend.Checked);
             }
@@ -617,5 +633,23 @@ public partial class MainForm : Form
         s.Order = lvMacStatus.Sorting;
         s.Column = e.Column;
         lvMacStatus.Sort();
+    }
+
+    private void btnPCIR_Click(object sender, EventArgs e)
+    {
+        if (!_isPeriodicSending)
+        {
+            if (!ValidateAndGetTarget(out IPEndPoint? targetEndPoint, isPeriodic: false)) return;
+            _udpManager.SendSingleMessageAsync(targetEndPoint!, chkEnableBroadcast.Checked, "PCIR");
+        }
+    }
+
+    private void btnInitPCIR_Click(object sender, EventArgs e)
+    {
+        if (!_isPeriodicSending)
+        {
+            if (!ValidateAndGetTarget(out IPEndPoint? targetEndPoint, isPeriodic: false)) return;
+            _udpManager.SendSingleMessageAsync(targetEndPoint!, chkEnableBroadcast.Checked, "PCIR,1");
+        }
     }
 }
